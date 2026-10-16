@@ -1,5 +1,8 @@
 #include "zeropack/core.h"
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "zeropack/config.h"
 #include "zeropack/mutex.h"
 #include "zeropack/pool.h"
@@ -142,7 +145,17 @@ static void handle_internal(
     }
 }
 
-void zp_process_rx_bytes(const uint8_t* data, size_t len) {
+uint8_t* zp_rx_get_buffer(size_t* out_available_len) {
+    if (s_rx_buffered >= ZP_BUFFER_SIZE) {
+        *out_available_len = 0;
+        return NULL;
+    }
+
+    *out_available_len = ZP_BUFFER_SIZE - s_rx_buffered;
+    return zp_rxbuf + s_rx_buffered;
+}
+
+void zp_rx_commit(size_t len) {
     if (s_rx_buffered + len > ZP_BUFFER_SIZE) {
         zp_emit_log(
             ZP_LOG_ERROR,
@@ -153,7 +166,6 @@ void zp_process_rx_bytes(const uint8_t* data, size_t len) {
         return;
     }
 
-    zp_memcpy(zp_rxbuf + s_rx_buffered, data, len);
     s_rx_buffered += len;
 
     while (s_rx_buffered >= sizeof(zp_header_t)) {

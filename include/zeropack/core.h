@@ -17,6 +17,7 @@ zp_ssize_t zp_send(
 );
 
 void zp_send_handshake(void);
-void zp_process_rx_bytes(const uint8_t* data, size_t len);
+uint8_t* zp_rx_get_buffer(size_t* out_available_len);
+void zp_rx_commit(size_t len);
 void zp_set_dispatch_hook(zp_dispatch_fn_t hook);
 void zp_emit_log(zp_log_level_t level, zp_log_code_t code, uint16_t extra);
