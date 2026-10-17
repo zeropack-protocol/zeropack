@@ -46,6 +46,7 @@ void* zp_pool_get_safe(zp_ctx_t* ctx, poolref_t ref);
 
 #define zp_pool_str(ctx, s) \
     zp_pool_push((ctx), TYPE_ID_u8, (s), (uint16_t)(zp_strlen(s) + 1))
-#define zp_pool_val(ctx, type, v) zp_pool_push((ctx), TYPE_ID_##type, &(v), 1)
+#define zp_pool_val(ctx, type, v) \
+    zp_pool_push((ctx), zp_type_id((ctx)->schema, type), &(v), 1)
 #define zp_pool_arr(ctx, type, ptr, count) \
-    zp_pool_push((ctx), TYPE_ID_##type, (ptr), (count))
+    zp_pool_push((ctx), zp_type_id((ctx)->schema, type), (ptr), (count))

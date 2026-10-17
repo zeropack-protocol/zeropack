@@ -37,7 +37,13 @@ typedef struct {
 
 uint8_t zp_get_meta_id(const zp_schema_t* schema, const zp_type_meta_t* meta);
 uint8_t zp_get_action_type_id(const zp_schema_t* schema, uint8_t action);
+const zp_type_meta_t* zp_get_type_meta(
+    const zp_schema_t* schema, uint8_t type_id
+);
 size_t zp_get_type_size(const zp_schema_t* schema, uint8_t type_id);
+const char* zp_get_type_name(const zp_schema_t* schema, uint8_t type_id);
+
+#define zp_type_id(schema, T) zp_get_meta_id((schema), zp_type_meta(T))
 
 #define _ZP_FIELD_META(_struct, _type, _name) \
     {.name = #_name,                          \

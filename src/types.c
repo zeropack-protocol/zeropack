@@ -11,15 +11,17 @@
 ZP_PRIMITIVES(ZP_DEF_PRIM_META)
 #undef ZP_DEF_PRIM_META
 
-#define ZP_PRIM_SIZE(type) sizeof(type),
-static const uint8_t s_prim_sizes[] = {0, ZP_PRIMITIVES(ZP_PRIM_SIZE)};
-#undef ZP_PRIM_SIZE
+#define ZP_REF_PRIM_META(p) &__zp_meta_##p,
+static const zp_type_meta_t* const s_prim_meta[] = {
+    NULL, ZP_PRIMITIVES(ZP_REF_PRIM_META)
+};
+#undef ZP_REF_PRIM_META
 
 uint8_t zp_get_meta_id(const zp_schema_t* schema, const zp_type_meta_t* meta) {
     if (!meta) return TYPE_ID_NONE;
 
     if (!meta->fields) {
-        return meta->count; // For primitives, count holds TYPE_ID_##p
+        return meta->count;  // For primitives, count holds TYPE_ID_##p
     }
 
     if (schema) {
@@ -37,15 +39,24 @@ uint8_t zp_get_action_type_id(const zp_schema_t* schema, uint8_t action) {
     return zp_get_meta_id(schema, schema->actions[action].type);
 }
 
-size_t zp_get_type_size(const zp_schema_t* schema, uint8_t type_id) {
-    if (type_id == 0) return 0;
-    if (type_id < sizeof(s_prim_sizes)) return s_prim_sizes[type_id];
-    if (!schema) return 0;
+const zp_type_meta_t* zp_get_type_meta(
+    const zp_schema_t* schema, uint8_t type_id
+) {
+    if (type_id == 0) return NULL;
+    if (type_id < TYPE_ID_START) return s_prim_meta[type_id];
+    if (!schema) return NULL;
 
     uint8_t index = type_id - TYPE_ID_START;
-    if (index < schema->type_count && schema->types[index]) {
-        return schema->types[index]->size;
-    }
+    return (index < schema->type_count) ? schema->types[index] : NULL;
+}
 
-    return 0;
+size_t zp_get_type_size(const zp_schema_t* schema, uint8_t type_id) {
+    const zp_type_meta_t* meta = zp_get_type_meta(schema, type_id);
+    return meta ? meta->size : 0;
+}
+
+const char* zp_get_type_name(const zp_schema_t* schema, uint8_t type_id) {
+    if (type_id == 0) return "none";
+    const zp_type_meta_t* meta = zp_get_type_meta(schema, type_id);
+    return meta ? meta->name : "unknown";
 }
