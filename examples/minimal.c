@@ -34,19 +34,22 @@ ZP_DECLARE(APP_TYPES, APP_ACTIONS)
 ZP_GENERATE_SCHEMA(APP_TYPES, APP_ACTIONS)
 
 // -----------------------------------------------------------------------------
-// Simulated Loopback Transport
+// Simulated Loopback Transport (Writes directly into ZeroPack's leased rx buffer)
 // -----------------------------------------------------------------------------
-static uint8_t s_bus_buffer[4096];
-static size_t s_bus_len = 0;
+static size_t s_pending_rx_len = 0;
 
 static zp_ssize_t loopback_writev(const zp_iovec_t* iov, int iovcnt) {
+    size_t avail = 0;
+    uint8_t* rx_buf = zp_rx_get_buffer(&avail);
+    if (!rx_buf) return -1;
+
     zp_ssize_t written = 0;
     for (int i = 0; i < iovcnt; i++) {
-        if (s_bus_len + iov[i].len > sizeof(s_bus_buffer)) {
+        if (s_pending_rx_len + iov[i].len > avail) {
             return -1; // Overflow
         }
-        memcpy(s_bus_buffer + s_bus_len, iov[i].buf, iov[i].len);
-        s_bus_len += iov[i].len;
+        memcpy(rx_buf + s_pending_rx_len, iov[i].buf, iov[i].len);
+        s_pending_rx_len += iov[i].len;
         written += (zp_ssize_t)iov[i].len;
     }
     return written;
@@ -62,10 +65,10 @@ static const zp_transport_t s_transport = {
 const zp_transport_t* zp_transport = &s_transport;
 
 static void flush_bus_to_receiver(const char* label) {
-    printf("\n--> Transport: Transmitting %zu bytes [%s]...\n", s_bus_len, label);
-    // Feed raw bytes into the ZeroPack receiver state machine
-    zp_process_rx_bytes(s_bus_buffer, s_bus_len);
-    s_bus_len = 0;
+    printf("\n--> Transport: Transmitting %zu bytes [%s]...\n", s_pending_rx_len, label);
+    // Commit the leased buffer directly into ZeroPack's receiver state machine
+    zp_rx_commit(s_pending_rx_len);
+    s_pending_rx_len = 0;
 }
 
 // -----------------------------------------------------------------------------
@@ -110,8 +113,8 @@ int main(void) {
     // Send binary handshake schema
     printf("\n[Step 3] Emitting self-describing binary handshake...\n");
     zp_send_handshake();
-    printf("  Handshake binary size: %zu bytes (contains complete schema & field definitions)\n", s_bus_len);
-    s_bus_len = 0;
+    printf("  Handshake binary size: %zu bytes (contains complete schema & field definitions)\n", s_pending_rx_len);
+    s_pending_rx_len = 0;
 
     printf("\n=== Execution completed successfully! ===\n");
     return 0;
