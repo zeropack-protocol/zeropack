@@ -4,7 +4,6 @@
 #include <stdint.h>
 
 #include "zeropack/config.h"
-#include "zeropack/mutex.h"
 #include "zeropack/pool.h"
 #include "zeropack/schema.h"
 
@@ -49,7 +48,7 @@ void zp_send_handshake(zp_t* zp) {
     hs.action_count = zp->schema->action_count;
     hs.pool_item_count = pool_item_count;
 
-    ZP_LOCK(tx);
+    ZP_LOCK(zp, ZP_LOCK_TX);
     zp_send_buf(zp, &hs, sizeof(hs));
 
     for (int i = 0; i < zp->schema->type_count; i++) {
@@ -93,7 +92,7 @@ void zp_send_handshake(zp_t* zp) {
 
         offset += total_slot;
     }
-    ZP_UNLOCK(tx);
+    ZP_UNLOCK(zp, ZP_LOCK_TX);
 }
 
 static void handle_internal(
@@ -229,6 +228,10 @@ int zp_init(zp_t* zp, const zp_config_t* cfg) {
     *zp = (zp_t){0};
 
     zp->schema = cfg->schema;
+
+    zp->lock = cfg->lock;
+    zp->unlock = cfg->unlock;
+
     zp->writev = cfg->writev;
     zp->dispatch = cfg->dispatch ? cfg->dispatch : cfg->schema->dispatch;
     zp->userdata = cfg->userdata;
@@ -272,8 +275,8 @@ zp_ssize_t zp_send(
 
     int iovcnt = (payload != NULL && size > 0) ? 2 : 1;
 
-    ZP_LOCK(tx);
+    ZP_LOCK(zp, ZP_LOCK_TX);
     zp_ssize_t ret = zp->writev(iov, iovcnt);
-    ZP_UNLOCK(tx);
+    ZP_UNLOCK(zp, ZP_LOCK_TX);
     return ret;
 }

@@ -2,10 +2,8 @@
 
 #include <stdint.h>
 
-#include "zeropack/action.h"
 #include "zeropack/config.h"
 #include "zeropack/core.h"
-#include "zeropack/mutex.h"
 #include "zeropack/types.h"
 
 bool zp_pool_is_valid(const zp_t* zp, poolref_t ref) {
@@ -30,10 +28,10 @@ poolref_t zp_pool_push(
 
     if (zp->pool_cap == 0) return 0xFFFF;
 
-    ZP_LOCK(pool);
+    ZP_LOCK(zp, ZP_LOCK_POOL);
 
     if (zp->pool_len + total_slot > zp->pool_cap) {
-        ZP_UNLOCK(pool);
+        ZP_UNLOCK(zp, ZP_LOCK_POOL);
         zp_emit_log(zp, ZP_LOG_ERROR, ZP_ERR_POOL_FULL, (uint16_t)total_slot);
         return 0xFFFF;
     }
@@ -49,7 +47,7 @@ poolref_t zp_pool_push(
     );
 
     zp->pool_len += total_slot;
-    ZP_UNLOCK(pool);
+    ZP_UNLOCK(zp, ZP_LOCK_POOL);
 
     return ref;
 }
@@ -63,27 +61,27 @@ bool zp_pool_edit(
 
     if (count == 0) count = 1;
 
-    ZP_LOCK(pool);
+    ZP_LOCK(zp, ZP_LOCK_POOL);
 
     if (!zp_pool_is_valid(zp, ref)) {
-        ZP_UNLOCK(pool);
+        ZP_UNLOCK(zp, ZP_LOCK_POOL);
         return false;
     }
 
     zp_pool_slot_t* slot = zp_pool_slot(zp, ref);
     if (slot->flags & ZP_POOL_FLAG_READONLY) {
-        ZP_UNLOCK(pool);
+        ZP_UNLOCK(zp, ZP_LOCK_POOL);
         zp_emit_log(zp, ZP_LOG_ERROR, ZP_ERR_POOL_READONLY, ref);
         return false;
     }
     if (type_id != slot->type_id) {
-        ZP_UNLOCK(pool);
+        ZP_UNLOCK(zp, ZP_LOCK_POOL);
         zp_emit_log(zp, ZP_LOG_ERROR, ZP_ERR_POOL_TYPE_MISMATCH, ref);
         return false;
     }
 
     if (count > slot->count) {
-        ZP_UNLOCK(pool);
+        ZP_UNLOCK(zp, ZP_LOCK_POOL);
         zp_emit_log(zp, ZP_LOG_ERROR, ZP_ERR_POOL_SLOT_EXCEEDED, count);
         return false;
     }
@@ -94,7 +92,7 @@ bool zp_pool_edit(
 
     size_t data_len = get_type_size(zp->schema, type_id) * count;
     zp_memcpy(zp->pool_buf + ref + sizeof(zp_pool_slot_t), data, data_len);
-    ZP_UNLOCK(pool);
+    ZP_UNLOCK(zp, ZP_LOCK_POOL);
 
     if (shrunk) {
         zp_emit_log(zp, ZP_LOG_WARN, ZP_ERR_POOL_SLOT_SHRUNK, count);
@@ -105,9 +103,9 @@ bool zp_pool_edit(
 
 void zp_pool_reset(zp_t* zp) {
     if (!zp) return;
-    ZP_LOCK(pool);
+    ZP_LOCK(zp, ZP_LOCK_POOL);
     zp->pool_len = 0;
-    ZP_UNLOCK(pool);
+    ZP_UNLOCK(zp, ZP_LOCK_POOL);
 }
 
 size_t zp_pool_used(const zp_t* zp) { return zp ? zp->pool_len : 0; }

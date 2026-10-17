@@ -9,11 +9,29 @@
 
 #define ZP_SLICE(n, s) .n##_buf = (s), .n##_cap = sizeof(s)
 
+#define ZP_LOCK(zp, target)                                 \
+    do {                                                    \
+        if ((zp)->lock) (zp)->lock(target, (zp)->userdata); \
+    } while (0)
+
+#define ZP_UNLOCK(zp, target)                                   \
+    do {                                                        \
+        if ((zp)->unlock) (zp)->unlock(target, (zp)->userdata); \
+    } while (0)
+
+typedef enum {
+    ZP_LOCK_TX = 0,
+    ZP_LOCK_POOL = 1,
+} zp_lock_target_t;
+
+typedef void (*zp_lock_fn_t)(zp_lock_target_t target, void* userdata);
 typedef zp_ssize_t (*zp_writev_fn_t)(const zp_iovec_t* iov, int iovcnt);
 
 typedef struct zp_s {
     const zp_schema_t* schema;
 
+    zp_lock_fn_t lock;
+    zp_lock_fn_t unlock;
     zp_writev_fn_t writev;
     zp_dispatch_fn_t dispatch;
 
@@ -31,6 +49,8 @@ typedef struct zp_s {
 typedef struct {
     const zp_schema_t* schema;
 
+    zp_lock_fn_t lock;
+    zp_lock_fn_t unlock;
     zp_writev_fn_t writev;
     zp_dispatch_fn_t dispatch;
 

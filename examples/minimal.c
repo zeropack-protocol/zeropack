@@ -6,14 +6,6 @@
 #include "zeropack/core.h"
 
 // -----------------------------------------------------------------------------
-// Mutex Stubs (Dummy implementation for single-threaded / bare-metal systems)
-// -----------------------------------------------------------------------------
-zp_mutex_t* zp_mutex_tx = NULL;
-zp_mutex_t* zp_mutex_pool = NULL;
-void zp_mutex_lock(zp_mutex_t* m) { (void)m; }
-void zp_mutex_unlock(zp_mutex_t* m) { (void)m; }
-
-// -----------------------------------------------------------------------------
 // Schema Definition (Compile-time macros, no external codegen required)
 // -----------------------------------------------------------------------------
 #define APP_TYPES(X) X(SensorReport, SENSOR_FIELDS)
