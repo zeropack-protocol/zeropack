@@ -2,21 +2,6 @@
 
 #include <stddef.h>
 
-#include "zp.config.h"  // IWYU pragma: export
-
-#ifndef ZP_POOL_SIZE
-#error \
-    "ZeroPack: ZP_POOL_SIZE must be defined in zp.config.h (set to 0 to disable)"
-#endif
-
-#ifndef ZP_BUFFER_SIZE
-#error "ZeroPack: ZP_BUFFER_SIZE must be defined in zp.config.h"
-#endif
-
-_Static_assert(
-    ZP_BUFFER_SIZE > 0, "ZeroPack: ZP_BUFFER_SIZE must be greater than 0"
-);
-
 /*
  * Abstracción de memoria freestanding:
  * Si el compilador soporta built-ins (GCC / Clang), los usamos directamente.

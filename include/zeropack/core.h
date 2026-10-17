@@ -4,11 +4,49 @@
 #include <stdint.h>
 
 #include "zeropack/action.h"
-#include "zeropack/transport.h"
+#include "zeropack/schema.h"
+#include "zeropack/types.h"
 
-int zp_start(void);
+#define ZP_SLICE(n, s) .n##_buf = (s), .n##_cap = sizeof(s)
+
+typedef zp_ssize_t (*zp_writev_fn_t)(const zp_iovec_t* iov, int iovcnt);
+
+typedef struct zp_s {
+    const zp_schema_t* schema;
+
+    zp_writev_fn_t writev;
+    zp_dispatch_fn_t dispatch;
+
+    uint8_t* rx_buf;
+    size_t rx_cap;
+    size_t rx_len;
+
+    uint8_t* pool_buf;
+    size_t pool_cap;
+    size_t pool_len;
+
+    void* userdata;
+} zp_t;
+
+typedef struct {
+    const zp_schema_t* schema;
+
+    zp_writev_fn_t writev;
+    zp_dispatch_fn_t dispatch;
+
+    void* rx_buf;
+    size_t rx_cap;
+
+    void* pool_buf;
+    size_t pool_cap;
+
+    void* userdata;
+} zp_config_t;
+
+int zp_init(zp_t* zp, const zp_config_t* cfg);
 
 zp_ssize_t zp_send(
+    zp_t* zp,
     uint8_t action,
     uint8_t type_id,
     uint16_t count,
@@ -16,8 +54,9 @@ zp_ssize_t zp_send(
     size_t size
 );
 
-void zp_send_handshake(void);
-uint8_t* zp_rx_get_buffer(size_t* out_available_len);
-void zp_rx_commit(size_t len);
-void zp_set_dispatch_hook(zp_dispatch_fn_t hook);
-void zp_emit_log(zp_log_level_t level, zp_log_code_t code, uint16_t extra);
+void zp_send_handshake(zp_t* zp);
+uint8_t* zp_rx_get_buffer(zp_t* zp, size_t* out_available_len);
+void zp_rx_commit(zp_t* zp, size_t len);
+void zp_emit_log(
+    zp_t* zp, zp_log_level_t level, zp_log_code_t code, uint16_t extra
+);

@@ -73,20 +73,9 @@ When negotiating schemas dynamically, the self-describing handshake frame begins
 
 ## Quickstart
 
-### 1. Configuration (`zp.config.h`)
+### 1. Define Types and Actions
 
-Create a `zp.config.h` in your project's include path to configure static buffer sizes:
-
-```c
-#pragma once
-
-#define ZP_POOL_SIZE    1024  // Memory pool size in bytes (set to 0 to disable)
-#define ZP_BUFFER_SIZE  2048  // RX stream assembly buffer size in bytes
-```
-
-### 2. Define Types and Actions
-
-Declare your application schema using standard C macros:
+Declare your application schema using standard C macros. Actions support optional wire aliases for protocol compatibility:
 
 ```c
 #include "zeropack.h"
@@ -101,19 +90,20 @@ Declare your application schema using standard C macros:
     F(S, u32, timestamp)
 
 // Define actions: V = Void, T = Single Struct, A = Array of Structs
-#define APP_ACTIONS(V, T, A) \
-    V(ACTION_PING)           \
-    V(ACTION_PONG)           \
-    T(ACTION_REPORT, SensorReport)
+// Wire alias is optional: V(NAME) or V(NAME, "WIRE_ALIAS")
+#define APP_ACTIONS(V, T, A)               \
+    V(ACTION_PING, "WIRE_PING")            \
+    V(ACTION_PONG)                         \
+    T(ACTION_REPORT, SensorReport, "WIRE_REPORT")
 
 // Declare type IDs, struct layouts, and inline senders
 ZP_DECLARE(APP_TYPES, APP_ACTIONS)
 
-// Generate runtime schema metadata and dispatcher (invoke once in main translation unit)
-ZP_GENERATE_SCHEMA(APP_TYPES, APP_ACTIONS)
+// Generate runtime schema metadata and dispatcher
+ZP_GENERATE_SCHEMA(app_schema, APP_TYPES, APP_ACTIONS)
 ```
 
-### 3. Implement Transport
+### 2. Implement Transport
 
 ZeroPack requires only a simple scatter-gather `writev` implementation:
 
@@ -126,12 +116,23 @@ static zp_ssize_t my_uart_writev(const zp_iovec_t* iov, int iovcnt) {
     }
     return total;
 }
+```
 
-static const zp_transport_t my_transport = {
+### 3. Initialize ZeroPack Instance
+
+ZeroPack performs zero dynamic heap allocations. Memory buffers are provided directly by the caller upon initialization:
+
+```c
+static uint8_t s_rx_buf[1024] __attribute__((aligned(8)));
+static uint8_t s_pool_buf[1024] __attribute__((aligned(8)));
+
+zp_t zp;
+zp_init(&zp, &(zp_config_t){
+    .schema = &app_schema,
     .writev = my_uart_writev,
-};
-
-const zp_transport_t* zp_transport = &my_transport;
+    ZP_SLICE(rx, s_rx_buf),
+    ZP_SLICE(pool, s_pool_buf),
+});
 ```
 
 ### 4. Register Event Callbacks & Emit Actions
@@ -144,7 +145,7 @@ static void on_report(const SensorReport* report) {
 
 int main(void) {
     // Register callback for incoming ACTION_REPORT events
-    zp_on_action(ACTION_REPORT, on_report);
+    zp_on_action(app_schema, ACTION_REPORT, on_report);
 
     // Emit an event over the wire
     SensorReport data = {
@@ -152,22 +153,27 @@ int main(void) {
         .humidity = 60.2f,
         .timestamp = 12000,
     };
-    zp_emit(ACTION_REPORT, &data);
+    zp_emit(&zp, ACTION_REPORT, &data);
 
     // Emit void actions with zero payload
-    zp_emit(ACTION_PING);
+    zp_emit(&zp, ACTION_PING);
 
     return 0;
 }
 ```
 
-### 5. Feed Ingress Bytes
+### 5. Zero-Copy Ingress Buffer Leasing
 
-Feed incoming bytes from UART DMA, interrupts, or socket `recv()` directly into the parser state machine:
+Lease ingress space directly from ZeroPack's RX buffer (ideal for DMA or non-blocking socket reads) and commit received bytes:
 
 ```c
-void on_uart_rx_chunk(const uint8_t* buffer, size_t length) {
-    zp_process_rx_bytes(buffer, length);
+void on_uart_rx_ready(zp_t* zp) {
+    size_t avail = 0;
+    uint8_t* rx_slot = zp_rx_get_buffer(zp, &avail);
+    if (!rx_slot) return;
+
+    size_t received = uart_read_bytes(rx_slot, avail);
+    zp_rx_commit(zp, received);
 }
 ```
 
@@ -212,7 +218,12 @@ Output:
     Timestamp   : 42000 ms
 
 [Step 3] Emitting self-describing binary handshake...
-  Handshake binary size: 117 bytes (contains complete schema & field definitions)
+  Handshake binary size: 113 bytes (contains complete schema & field definitions)
+
+[Step 4] Verifying Wire Aliases in Runtime Schema Metadata:
+  Action ID 0 -> wire name: "WIRE_PING"
+  Action ID 1 -> wire name: "ACTION_PONG"
+  Action ID 2 -> wire name: "WIRE_REPORT"
 
 === Execution completed successfully! ===
 ```

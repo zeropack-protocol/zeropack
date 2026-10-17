@@ -36,6 +36,9 @@ typedef struct {
     zp_dispatch_fn_t dispatch;
 } zp_schema_t;
 
+const char* get_type_name(const zp_schema_t* schema, uint8_t type_id);
+size_t get_type_size(const zp_schema_t* schema, uint8_t type_id);
+
 #define FIELD_DESC(S, type, name) {TYPE_ID_##type, offsetof(S, name), 0, #name},
 #define ARRAY_DESC(S, type, name, len) \
     {TYPE_ID_##type, offsetof(S, name), len, #name},
@@ -60,38 +63,40 @@ typedef struct {
     ZP_DECLARE_SENDERS(ActionsMacro)
 
 // clang-format off
-#define ZP_GENERATE_SCHEMA(TypesMacro, ActionsMacro)                    \
-    void (*__zp_callbacks[ACTION_ID_MAX])(void) = {0};                  \
-                                                                        \
-    static bool __zp_dispatch(                                          \
-        const zp_header_t* hdr, const uint8_t* payload, size_t len      \
-    ) {                                                                 \
-        switch (hdr->action) {                                          \
-            ActionsMacro(ZP_DISPATCH_V, ZP_DISPATCH_T, ZP_DISPATCH_A)   \
-            default:                                                    \
-                return false;                                           \
-            }                                                           \
-    }                                                                   \
-                                                                        \
-    static const struct_desc_t __zp_types[] = {                         \
-      TypesMacro(MAKE_STRUCT_META)                                      \
-    };                                                                  \
-    static const action_desc_t __zp_actions[] = {                       \
-        ActionsMacro(ACTION_V, ACTION_T, ACTION_A)                      \
-    };                                                                  \
-                                                                        \
-    const zp_schema_t zp_schema = {                                     \
-        .types = __zp_types,                                            \
-        .type_count = sizeof(__zp_types) / sizeof(__zp_types[0]),       \
-        .actions = __zp_actions,                                        \
-        .action_count = sizeof(__zp_actions) / sizeof(__zp_actions[0]), \
-        .dispatch = __zp_dispatch,                                      \
+#define ZP_GENERATE_SCHEMA(Name, TypesMacro, ActionsMacro)                    \
+    static const action_desc_t Name##_actions[] = {                           \
+        ActionsMacro(ACTION_V, ACTION_T, ACTION_A)                            \
+    };                                                                        \
+                                                                              \
+    _Static_assert(                                                           \
+        (sizeof(Name##_actions) / sizeof(Name##_actions[0])) <=               \
+            ZP_SYS_ACTION_START,                                              \
+        "Action limit exceeded"                                               \
+    );                                                                        \
+                                                                              \
+    void (*__##Name##_callbacks[sizeof(Name##_actions) /                      \
+                            sizeof(Name##_actions[0])])(void) = {0};          \
+                                                                              \
+    static bool Name##_dispatch(                                              \
+        const zp_header_t* hdr, const uint8_t* payload, size_t len            \
+    ) {                                                                       \
+        void (** const __zp_callbacks)(void) = __##Name##_callbacks;          \
+        switch (hdr->action) {                                                \
+            ActionsMacro(ZP_DISPATCH_V, ZP_DISPATCH_T, ZP_DISPATCH_A)         \
+            default:                                                          \
+                return false;                                                 \
+        }                                                                     \
+    }                                                                         \
+                                                                              \
+    static const struct_desc_t Name##_types[] = {                             \
+        TypesMacro(MAKE_STRUCT_META)                                          \
+    };                                                                        \
+                                                                              \
+    const zp_schema_t Name = {                                                \
+        .types = Name##_types,                                                \
+        .type_count = sizeof(Name##_types) / sizeof(Name##_types[0]),         \
+        .actions = Name##_actions,                                            \
+        .action_count = sizeof(Name##_actions) / sizeof(Name##_actions[0]),   \
+        .dispatch = Name##_dispatch,                                          \
     };
 // clang-format on
-
-// Instancia global del esquema
-// Se declara como 'extern' para que otros modulos puedan consultar
-// la tabla de acciones y tipos sin duplicar símbolos
-//
-// ZP_GENERATE_SCHEMA debe ser llamado una sola vez en el archivo principal
-extern const zp_schema_t zp_schema;

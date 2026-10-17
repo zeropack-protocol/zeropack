@@ -5,18 +5,16 @@
 #include <stdint.h>
 
 #include "zeropack/protocol.h"
-#include "zeropack/transport.h"
+#include "zeropack/types.h"
 
-// Forward declaration of zp_send so action.h doesn't depend on core.h
 zp_ssize_t zp_send(
+    zp_t* zp,
     uint8_t action,
     uint8_t type_id,
     uint16_t count,
     const void* payload,
     size_t size
 );
-
-// -----------------------------------------------------------------------------
 // -----------------------------------------------------------------------------
 // Action Descriptors with Optional Wire Alias Support:
 //   V(ACTION_NAME)             or V(ACTION_NAME, "wire_name")
@@ -56,16 +54,8 @@ zp_ssize_t zp_send(
         __VA_ARGS__                                                                                   \
     )
 
-#define ZP_DECLARE_ACTION_IDS(ActionsMacro)                                \
-    typedef enum {                                                         \
-        ActionsMacro(GEN_ACTION_ID, GEN_ACTION_ID, GEN_ACTION_ID)          \
-            ACTION_ID_MAX                                                  \
-    } action_id_t;                                                         \
-                                                                           \
-    _Static_assert(                                                        \
-        ACTION_ID_MAX <= ZP_SYS_ACTION_START,                              \
-        "Action limit exceeded: ZeroPack reserves action IDs 0xF0 .. 0xFF" \
-    );
+#define ZP_DECLARE_ACTION_IDS(ActionsMacro) \
+    enum { ActionsMacro(GEN_ACTION_ID, GEN_ACTION_ID, GEN_ACTION_ID) };
 
 #define _ZP_DISPATCH_V_1(name)                          \
     case name:                                          \
@@ -132,16 +122,14 @@ zp_ssize_t zp_send(
 #define ZP_CB_TYPE_A(...) \
     _ZP_GET_CB_A(__VA_ARGS__, _ZP_CB_TYPE_A_3, _ZP_CB_TYPE_A_2, 0)(__VA_ARGS__)
 
-#define ZP_DECLARE_CALLBACKS(ActionsMacro)       \
-    ActionsMacro(                                \
-        ZP_CB_TYPE_V, ZP_CB_TYPE_T, ZP_CB_TYPE_A \
-    ) extern void (*__zp_callbacks[ACTION_ID_MAX])(void);
+#define ZP_DECLARE_CALLBACKS(ActionsMacro) \
+    ActionsMacro(ZP_CB_TYPE_V, ZP_CB_TYPE_T, ZP_CB_TYPE_A)
 
 #define ZP_INLINE __attribute__((unused, always_inline)) static inline
 
-#define _ZP_SEND_FN_V_1(name)                           \
-    ZP_INLINE zp_ssize_t __zp_emit_##name(void) {       \
-        return zp_send(name, TYPE_ID_NONE, 0, NULL, 0); \
+#define _ZP_SEND_FN_V_1(name)                               \
+    ZP_INLINE zp_ssize_t __zp_emit_##name(zp_t* zp) {       \
+        return zp_send(zp, name, TYPE_ID_NONE, 0, NULL, 0); \
     }
 #define _ZP_SEND_FN_V_2(name, alias) _ZP_SEND_FN_V_1(name)
 #define _ZP_GET_SEND_V(_1, _2, NAME, ...) NAME
@@ -150,9 +138,9 @@ zp_ssize_t zp_send(
         __VA_ARGS__                                                   \
     )
 
-#define _ZP_SEND_FN_T_2(name, type)                                  \
-    ZP_INLINE zp_ssize_t __zp_emit_##name(const type* data) {        \
-        return zp_send(name, TYPE_ID_##type, 1, data, sizeof(type)); \
+#define _ZP_SEND_FN_T_2(name, type)                                      \
+    ZP_INLINE zp_ssize_t __zp_emit_##name(zp_t* zp, const type* data) {  \
+        return zp_send(zp, name, TYPE_ID_##type, 1, data, sizeof(type)); \
     }
 #define _ZP_SEND_FN_T_3(name, type, alias) _ZP_SEND_FN_T_2(name, type)
 #define _ZP_GET_SEND_T(_1, _2, _3, NAME, ...) NAME
@@ -161,11 +149,18 @@ zp_ssize_t zp_send(
         __VA_ARGS__                                                   \
     )
 
-#define _ZP_SEND_FN_A_2(name, type)                                           \
-    ZP_INLINE zp_ssize_t __zp_emit_##name(const type* data, uint16_t count) { \
-        return zp_send(                                                       \
-            name, TYPE_ID_##type, count, data, (size_t)count * sizeof(type)   \
-        );                                                                    \
+#define _ZP_SEND_FN_A_2(name, type)                \
+    ZP_INLINE zp_ssize_t __zp_emit_##name(         \
+        zp_t* zp, const type* data, uint16_t count \
+    ) {                                            \
+        return zp_send(                            \
+            zp,                                    \
+            name,                                  \
+            TYPE_ID_##type,                        \
+            count,                                 \
+            data,                                  \
+            (size_t)count * sizeof(type)           \
+        );                                         \
     }
 #define _ZP_SEND_FN_A_3(name, type, alias) _ZP_SEND_FN_A_2(name, type)
 #define _ZP_GET_SEND_A(_1, _2, _3, NAME, ...) NAME
@@ -176,18 +171,19 @@ zp_ssize_t zp_send(
 #define ZP_DECLARE_SENDERS(ActionsMacro) \
     ActionsMacro(ZP_SEND_FN_V, ZP_SEND_FN_T, ZP_SEND_FN_A)
 
-#define __ZP_EMIT_V(name) __zp_emit_##name()
-#define __ZP_EMIT_T(name, data) __zp_emit_##name(data)
-#define __ZP_EMIT_A(name, data, count) __zp_emit_##name(data, count)
-#define __ZP_EMIT_DISPATCH(_1, _2, _3, NAME, ...) NAME
+#define __ZP_EMIT_V(zp, name) __zp_emit_##name(zp)
+#define __ZP_EMIT_T(zp, name, data) __zp_emit_##name(zp, data)
+#define __ZP_EMIT_A(zp, name, data, count) __zp_emit_##name(zp, data, count)
+#define __ZP_EMIT_DISPATCH(_1, _2, _3, _4, NAME, ...) NAME
 #define zp_emit(...)                                                           \
     __ZP_EMIT_DISPATCH(__VA_ARGS__, __ZP_EMIT_A, __ZP_EMIT_T, __ZP_EMIT_V, 0)( \
         __VA_ARGS__                                                            \
     )
-#define zp_on_action(action_name, fn)                       \
-    do {                                                    \
-        zp_cb_##action_name##_t _chk = (fn);                \
-        __zp_callbacks[action_name] = (void (*)(void))_chk; \
+#define zp_on_action(schema, action_name, fn)                       \
+    do {                                                            \
+        extern void (*__##schema##_callbacks[])(void);              \
+        zp_cb_##action_name##_t _chk = (fn);                        \
+        __##schema##_callbacks[action_name] = (void (*)(void))_chk; \
     } while (0)
 
 typedef bool (*zp_dispatch_fn_t)(

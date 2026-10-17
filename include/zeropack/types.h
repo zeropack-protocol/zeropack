@@ -15,6 +15,15 @@ typedef uint64_t u64;
 typedef float    f32;
 typedef double   f64;
 typedef uint16_t poolref_t;
+typedef ptrdiff_t zp_ssize_t;
+
+typedef struct {
+    const void* buf;
+    size_t len;
+} zp_iovec_t;
+
+typedef struct zp_s zp_t;
+
 #define ZP_PRIMITIVES(X) \
     X(u8) X(u16) X(u32) X(u64) \
     X(s8) X(s16) X(s32) X(s64) \
@@ -42,6 +51,3 @@ typedef enum {
     } StructName;
 
 #define ZP_DECLARE_STRUCTS(TypesMacro) TypesMacro(DEFINE_TYPE)
-
-const char* get_type_name(uint8_t type_id);
-size_t get_type_size(uint8_t type_id);

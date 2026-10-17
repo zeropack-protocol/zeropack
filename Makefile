@@ -19,7 +19,7 @@ $(LIB): build $(OBJS)
 	$(AR) rcs $@ $(OBJS)
 
 build/%.o: src/%.c | build
-	$(CC) $(CFLAGS) -Iexamples -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 example: $(LIB)
 	$(CC) $(CFLAGS) -Iexamples examples/minimal.c $(LIB) -o $(EXAMPLE_BIN)

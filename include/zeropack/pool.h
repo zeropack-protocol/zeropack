@@ -2,6 +2,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #include "zeropack/config.h"
 #include "zeropack/types.h"
@@ -22,29 +23,26 @@ typedef struct {
 #define ZP_SLOT_TOTAL_SIZE(data_len) \
     ZP_ALIGN8(sizeof(zp_pool_slot_t) + (data_len))
 
-extern uint8_t* __zp_pool;
+void zp_pool_reset(zp_t* zp);
+size_t zp_pool_used(const zp_t* zp);
+size_t zp_pool_free(const zp_t* zp);
 
-void zp_pool_reset(void);
-size_t zp_pool_used(void);
-size_t zp_pool_free(void);
-
-poolref_t zp_pool_push(uint8_t type_id, const void* data, uint16_t count);
+poolref_t zp_pool_push(
+    zp_t* zp, uint8_t type_id, const void* data, uint16_t count
+);
 bool zp_pool_edit(
-    poolref_t ref, uint8_t type_id, const void* data, uint16_t count
+    zp_t* zp, poolref_t ref, uint8_t type_id, const void* data, uint16_t count
 );
 
-#define zp_pool_get(ref) ((void*)(__zp_pool + (ref) + sizeof(zp_pool_slot_t)))
-#define zp_pool_slot(ref) ((zp_pool_slot_t*)(__zp_pool + (ref)))
+#define zp_pool_get(zp, ref) \
+    ((void*)((zp)->pool_buf + (ref) + sizeof(zp_pool_slot_t)))
+#define zp_pool_slot(zp, ref) ((zp_pool_slot_t*)((zp)->pool_buf + (ref)))
 
-static inline bool zp_pool_is_valid(poolref_t ref) {
-    return (ref + sizeof(zp_pool_slot_t)) <= zp_pool_used();
-}
+bool zp_pool_is_valid(const zp_t* zp, poolref_t ref);
+void* zp_pool_get_safe(zp_t* zp, poolref_t ref);
 
-static inline void* zp_pool_get_safe(poolref_t ref) {
-    return zp_pool_is_valid(ref) ? zp_pool_get(ref) : NULL;
-}
-
-#define zp_pool_str(s) zp_pool_push(TYPE_ID_u8, (s), zp_strlen(s) + 1)
-#define zp_pool_val(type, v) zp_pool_push(TYPE_ID_##type, &(v), 1)
-#define zp_pool_arr(type, ptr, count) \
-    zp_pool_push(TYPE_ID_##type, (ptr), (count))
+#define zp_pool_str(zp, s) \
+    zp_pool_push((zp), TYPE_ID_u8, (s), (uint16_t)(zp_strlen(s) + 1))
+#define zp_pool_val(zp, type, v) zp_pool_push((zp), TYPE_ID_##type, &(v), 1)
+#define zp_pool_arr(zp, type, ptr, count) \
+    zp_pool_push((zp), TYPE_ID_##type, (ptr), (count))
