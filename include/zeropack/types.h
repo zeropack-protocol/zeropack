@@ -31,18 +31,10 @@ typedef struct zp_s zp_t;
 // clang-format on
 
 #define GEN_PRIM_TYPE_ID(name) TYPE_ID_##name,
-#define GEN_STRUCT_TYPE_ID(name, fields) TYPE_ID_##name,
-typedef enum {
+enum {
     TYPE_ID_NONE = 0,
-    ZP_PRIMITIVES(GEN_PRIM_TYPE_ID) __PRIM_TYPE_END,
-} primtype_id_t;
-
-#define ZP_DECLARE_TYPE_IDS(TypesMacro)             \
-    typedef enum {                                  \
-        TYPE_ID_START = __PRIM_TYPE_END,            \
-        TypesMacro(GEN_STRUCT_TYPE_ID) TYPE_ID_MAX, \
-    } type_id_t;
-
+    ZP_PRIMITIVES(GEN_PRIM_TYPE_ID) TYPE_ID_START,
+};
 #define MAKE_FIELD(S, type, name) type name;
 #define MAKE_ARRAY(S, type, name, len) type name[len];
 #define DEFINE_TYPE(StructName, FieldsMacro)            \
@@ -50,4 +42,11 @@ typedef enum {
         FieldsMacro(StructName, MAKE_FIELD, MAKE_ARRAY) \
     } StructName;
 
-#define ZP_DECLARE_STRUCTS(TypesMacro) TypesMacro(DEFINE_TYPE)
+#define ZP_GEN_TYPE_DECL(TypesMacro) TypesMacro(DEFINE_TYPE)
+#define ZP_DECLARE_STRUCTS(TypesMacro) ZP_GEN_TYPE_DECL(TypesMacro)
+
+typedef struct struct_desc_s struct_desc_t;
+
+#define ZP_DECL_PRIM_META(p) extern const struct_desc_t __zp_meta_##p;
+ZP_PRIMITIVES(ZP_DECL_PRIM_META)
+

@@ -6,6 +6,7 @@
 #include "zeropack/config.h"
 #include "zeropack/pool.h"
 #include "zeropack/schema.h"
+#include "zeropack/types.h"
 
 void zp_emit_log(
     zp_t* zp, zp_log_level_t level, zp_log_code_t code, uint16_t extra
@@ -15,7 +16,9 @@ void zp_emit_log(
         .code = (uint8_t)code,
         .extra = extra,
     };
-    zp_send(zp, ZP_SYS_ACTION_LOG, TYPE_ID_u8, sizeof(msg), &msg, sizeof(msg));
+    zp_send_raw(
+        zp, ZP_SYS_ACTION_LOG, TYPE_ID_u8, sizeof(msg), &msg, sizeof(msg)
+    );
 }
 
 static inline zp_ssize_t zp_send_buf(zp_t* zp, const void* buf, size_t len) {
@@ -52,9 +55,10 @@ void zp_send_handshake(zp_t* zp) {
     zp_send_buf(zp, &hs, sizeof(hs));
 
     for (int i = 0; i < zp->schema->type_count; i++) {
-        const struct_desc_t* t = &zp->schema->types[i];
+        const struct_desc_t* t = zp->schema->types[i];
 
-        zp_send_buf(zp, &t->id, sizeof(t->id));
+        uint8_t type_id = (uint8_t)(TYPE_ID_START + i);
+        zp_send_buf(zp, &type_id, sizeof(type_id));
         zp_send_buf(zp, &t->count, sizeof(t->count));
         zp_send_buf(zp, &t->size, sizeof(t->size));
         zp_send_buf(zp, t->name, zp_strlen(t->name) + 1);
@@ -62,7 +66,8 @@ void zp_send_handshake(zp_t* zp) {
         for (int j = 0; j < t->count; j++) {
             const field_desc_t* f = &t->fields[j];
 
-            zp_send_buf(zp, &f->type, sizeof(f->type));
+            uint8_t f_type = zp_get_meta_id(zp->schema, f->type);
+            zp_send_buf(zp, &f_type, sizeof(f_type));
             zp_send_buf(zp, &f->offset, sizeof(f->offset));
             zp_send_buf(zp, &f->length, sizeof(f->length));
             zp_send_buf(zp, f->name, zp_strlen(f->name) + 1);
@@ -72,7 +77,8 @@ void zp_send_handshake(zp_t* zp) {
     for (int i = 0; i < zp->schema->action_count; i++) {
         const action_desc_t* a = &zp->schema->actions[i];
 
-        zp_send_buf(zp, &a->type, sizeof(a->type));
+        uint8_t type_id = zp_get_action_type_id(zp->schema, (uint8_t)i);
+        zp_send_buf(zp, &type_id, sizeof(type_id));
         zp_send_buf(zp, &a->is_array, sizeof(a->is_array));
         zp_send_buf(zp, a->name, zp_strlen(a->name) + 1);
     }
@@ -111,7 +117,7 @@ static void handle_internal(
             uint16_t count = hdr->count ? hdr->count : 1;
             poolref_t ref = zp_pool_push(zp, hdr->type_id, payload, count);
 
-            zp_send(
+            zp_send_raw(
                 zp,
                 ZP_SYS_ACTION_POOL_STORE,
                 TYPE_ID_poolref_t,
@@ -123,7 +129,7 @@ static void handle_internal(
         }
         case ZP_SYS_ACTION_POOL_RESET:
             zp_pool_reset(zp);
-            zp_send(zp, ZP_SYS_ACTION_POOL_RESET, TYPE_ID_NONE, 0, NULL, 0);
+            zp_send_raw(zp, ZP_SYS_ACTION_POOL_RESET, TYPE_ID_NONE, 0, NULL, 0);
             break;
         default:
             zp_emit_log(
@@ -179,7 +185,7 @@ void zp_rx_commit(zp_t* zp, size_t len) {
             }
 
             act = &zp->schema->actions[hdr->action];
-            payload_len = get_type_size(zp->schema, act->type) * hdr->count;
+            payload_len = (act->type ? act->type->size : 0) * hdr->count;
         }
 
         size_t total_packet_len = sizeof(zp_header_t) + payload_len;
@@ -252,7 +258,7 @@ int zp_init(zp_t* zp, const zp_config_t* cfg) {
     return 0;
 }
 
-zp_ssize_t zp_send(
+zp_ssize_t zp_send_raw(
     zp_t* zp,
     uint8_t action,
     uint8_t type_id,
@@ -279,4 +285,15 @@ zp_ssize_t zp_send(
     zp_ssize_t ret = zp->writev(iov, iovcnt);
     ZP_UNLOCK(zp, ZP_LOCK_TX);
     return ret;
+}
+
+zp_ssize_t zp_send(
+    zp_t* zp,
+    uint8_t action,
+    uint16_t count,
+    const void* payload,
+    size_t size
+) {
+    uint8_t type_id = zp_get_action_type_id(zp ? zp->schema : NULL, action);
+    return zp_send_raw(zp, action, type_id, count, payload, size);
 }

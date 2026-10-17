@@ -68,6 +68,14 @@ int zp_init(zp_t* zp, const zp_config_t* cfg);
 zp_ssize_t zp_send(
     zp_t* zp,
     uint8_t action,
+    uint16_t count,
+    const void* payload,
+    size_t size
+);
+
+zp_ssize_t zp_send_raw(
+    zp_t* zp,
+    uint8_t action,
     uint8_t type_id,
     uint16_t count,
     const void* payload,

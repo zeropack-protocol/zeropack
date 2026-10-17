@@ -4,6 +4,7 @@
 
 #include "zeropack.h"
 #include "zeropack/core.h"
+#include "zeropack/schema.h"
 
 // -----------------------------------------------------------------------------
 // Schema Definition (Compile-time macros, no external codegen required)
@@ -20,7 +21,6 @@
     V(ACTION_PONG)              \
     T(ACTION_REPORT, SensorReport, "WIRE_REPORT")
 
-// Declare type IDs, structs, and dispatcher prototypes
 ZP_DECLARE(APP_TYPES, APP_ACTIONS)
 
 // Generate the runtime schema metadata and dispatch table

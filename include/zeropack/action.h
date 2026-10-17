@@ -10,6 +10,14 @@
 zp_ssize_t zp_send(
     zp_t* zp,
     uint8_t action,
+    uint16_t count,
+    const void* payload,
+    size_t size
+);
+
+zp_ssize_t zp_send_raw(
+    zp_t* zp,
+    uint8_t action,
     uint8_t type_id,
     uint16_t count,
     const void* payload,
@@ -21,24 +29,24 @@ zp_ssize_t zp_send(
 //   T(ACTION_NAME, Type)       or T(ACTION_NAME, Type, "wire_name")
 //   A(ACTION_NAME, Type)       or A(ACTION_NAME, Type, "wire_name")
 // -----------------------------------------------------------------------------
-#define _ZP_ACTION_V_1(name) {TYPE_ID_NONE, 0, #name},
-#define _ZP_ACTION_V_2(name, alias) {TYPE_ID_NONE, 0, alias},
+#define _ZP_ACTION_V_1(_name) {.name = #_name, .type = NULL, .is_array = 0},
+#define _ZP_ACTION_V_2(_name, _alias) {.name = _alias, .type = NULL, .is_array = 0},
 #define _ZP_GET_ACTION_V(_1, _2, NAME, ...) NAME
 #define ACTION_V(...)                                                 \
     _ZP_GET_ACTION_V(__VA_ARGS__, _ZP_ACTION_V_2, _ZP_ACTION_V_1, 0)( \
         __VA_ARGS__                                                   \
     )
 
-#define _ZP_ACTION_T_2(name, type) {TYPE_ID_##type, 0, #name},
-#define _ZP_ACTION_T_3(name, type, alias) {TYPE_ID_##type, 0, alias},
+#define _ZP_ACTION_T_2(_name, _type) {.name = #_name, .type = &__zp_meta_##_type, .is_array = 0},
+#define _ZP_ACTION_T_3(_name, _type, _alias) {.name = _alias, .type = &__zp_meta_##_type, .is_array = 0},
 #define _ZP_GET_ACTION_T(_1, _2, _3, NAME, ...) NAME
 #define ACTION_T(...)                                                 \
     _ZP_GET_ACTION_T(__VA_ARGS__, _ZP_ACTION_T_3, _ZP_ACTION_T_2, 0)( \
         __VA_ARGS__                                                   \
     )
 
-#define _ZP_ACTION_A_2(name, type) {TYPE_ID_##type, 1, #name},
-#define _ZP_ACTION_A_3(name, type, alias) {TYPE_ID_##type, 1, alias},
+#define _ZP_ACTION_A_2(_name, _type) {.name = #_name, .type = &__zp_meta_##_type, .is_array = 1},
+#define _ZP_ACTION_A_3(_name, _type, _alias) {.name = _alias, .type = &__zp_meta_##_type, .is_array = 1},
 #define _ZP_GET_ACTION_A(_1, _2, _3, NAME, ...) NAME
 #define ACTION_A(...)                                                 \
     _ZP_GET_ACTION_A(__VA_ARGS__, _ZP_ACTION_A_3, _ZP_ACTION_A_2, 0)( \
@@ -127,9 +135,9 @@ zp_ssize_t zp_send(
 
 #define ZP_INLINE __attribute__((unused, always_inline)) static inline
 
-#define _ZP_SEND_FN_V_1(name)                               \
-    ZP_INLINE zp_ssize_t __zp_emit_##name(zp_t* zp) {       \
-        return zp_send(zp, name, TYPE_ID_NONE, 0, NULL, 0); \
+#define _ZP_SEND_FN_V_1(name)                         \
+    ZP_INLINE zp_ssize_t __zp_emit_##name(zp_t* zp) { \
+        return zp_send(zp, name, 0, NULL, 0);         \
     }
 #define _ZP_SEND_FN_V_2(name, alias) _ZP_SEND_FN_V_1(name)
 #define _ZP_GET_SEND_V(_1, _2, NAME, ...) NAME
@@ -140,7 +148,7 @@ zp_ssize_t zp_send(
 
 #define _ZP_SEND_FN_T_2(name, type)                                      \
     ZP_INLINE zp_ssize_t __zp_emit_##name(zp_t* zp, const type* data) {  \
-        return zp_send(zp, name, TYPE_ID_##type, 1, data, sizeof(type)); \
+        return zp_send(zp, name, 1, data, sizeof(type));                 \
     }
 #define _ZP_SEND_FN_T_3(name, type, alias) _ZP_SEND_FN_T_2(name, type)
 #define _ZP_GET_SEND_T(_1, _2, _3, NAME, ...) NAME
@@ -149,18 +157,17 @@ zp_ssize_t zp_send(
         __VA_ARGS__                                                   \
     )
 
-#define _ZP_SEND_FN_A_2(name, type)                \
-    ZP_INLINE zp_ssize_t __zp_emit_##name(         \
-        zp_t* zp, const type* data, uint16_t count \
-    ) {                                            \
-        return zp_send(                            \
-            zp,                                    \
-            name,                                  \
-            TYPE_ID_##type,                        \
-            count,                                 \
-            data,                                  \
-            (size_t)count * sizeof(type)           \
-        );                                         \
+#define _ZP_SEND_FN_A_2(name, type)                                 \
+    ZP_INLINE zp_ssize_t __zp_emit_##name(                          \
+        zp_t* zp, const type* data, uint16_t count                  \
+    ) {                                                             \
+        return zp_send(                                             \
+            zp,                                                     \
+            name,                                                   \
+            count,                                                  \
+            data,                                                   \
+            (size_t)count * sizeof(type)                            \
+        );                                                          \
     }
 #define _ZP_SEND_FN_A_3(name, type, alias) _ZP_SEND_FN_A_2(name, type)
 #define _ZP_GET_SEND_A(_1, _2, _3, NAME, ...) NAME
