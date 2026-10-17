@@ -46,7 +46,7 @@ Every application message or event begins with a fixed 4-byte header:
 - **Count (`uint16_t`):** Element count (0 or 1 for single structs, $N$ for array payloads).
 - **Payload Data:** Raw, contiguous binary struct memory aligned to an 8-byte boundary.
 
-### Handshake Header (`zp_handshake_t` &mdash; 10 bytes)
+### Handshake Header (`zp_handshake_t` &mdash; 8 bytes)
 
 When negotiating schemas dynamically, the self-describing handshake frame begins with:
 
@@ -56,17 +56,15 @@ When negotiating schemas dynamically, the self-describing handshake frame begins
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 |   Magic ('Z') |B|  Reserved   |          Pool Size            |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|          Type Count           |         Action Count          |
+|  Type Count   | Action Count  |        Pool Item Count        |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|        Pool Item Count        |
-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ```
 
 - **Magic (`uint8_t`):** Handshake identifier (`'Z'` / `0x5A`).
 - **Byte Order (`B`, 1 bit):** Endianness flag (`0` = Little Endian, `1` = Big Endian).
 - **Pool Size (`uint16_t`):** Configured shared memory pool size.
-- **Type Count (`uint16_t`):** Number of struct type definitions following the header.
-- **Action Count (`uint16_t`):** Number of action descriptors following the header.
+- **Type Count (`uint8_t`):** Number of struct type definitions following the header.
+- **Action Count (`uint8_t`):** Number of action descriptors following the header.
 - **Pool Item Count (`uint16_t`):** Initial number of items stored in the shared pool.
 
 ---
@@ -126,8 +124,8 @@ ZeroPack performs zero dynamic heap allocations. Memory buffers are provided dir
 static uint8_t s_rx_buf[1024] __attribute__((aligned(8)));
 static uint8_t s_pool_buf[1024] __attribute__((aligned(8)));
 
-zp_t zp;
-zp_init(&zp, &(zp_config_t){
+zp_ctx_t ctx;
+zp_init(&ctx, &(zp_config_t){
     .schema = &app_schema,
     .writev = my_uart_writev,
     ZP_SLICE(rx, s_rx_buf),
@@ -138,7 +136,8 @@ zp_init(&zp, &(zp_config_t){
 ### 4. Register Event Callbacks & Emit Actions
 
 ```c
-static void on_report(const SensorReport* report) {
+static void on_report(zp_ctx_t* ctx, const SensorReport* report) {
+    (void)ctx;
     printf("Received: Temp=%.2f C, Humidity=%.2f %%\n",
            report->temperature, report->humidity);
 }
@@ -153,10 +152,10 @@ int main(void) {
         .humidity = 60.2f,
         .timestamp = 12000,
     };
-    zp_emit(&zp, ACTION_REPORT, &data);
+    zp_emit(&ctx, ACTION_REPORT, &data);
 
     // Emit void actions with zero payload
-    zp_emit(&zp, ACTION_PING);
+    zp_emit(&ctx, ACTION_PING);
 
     return 0;
 }
@@ -167,13 +166,13 @@ int main(void) {
 Lease ingress space directly from ZeroPack's RX buffer (ideal for DMA or non-blocking socket reads) and commit received bytes:
 
 ```c
-void on_uart_rx_ready(zp_t* zp) {
+void on_uart_rx_ready(zp_ctx_t* ctx) {
     size_t avail = 0;
-    uint8_t* rx_slot = zp_rx_get_buffer(zp, &avail);
+    uint8_t* rx_slot = zp_rx_get_buffer(ctx, &avail);
     if (!rx_slot) return;
 
     size_t received = uart_read_bytes(rx_slot, avail);
-    zp_rx_commit(zp, received);
+    zp_rx_commit(ctx, received);
 }
 ```
 
@@ -218,7 +217,7 @@ Output:
     Timestamp   : 42000 ms
 
 [Step 3] Emitting self-describing binary handshake...
-  Handshake binary size: 113 bytes (contains complete schema & field definitions)
+  Handshake binary size: 111 bytes (contains complete schema & field definitions)
 
 [Step 4] Verifying Wire Aliases in Runtime Schema Metadata:
   Action ID 0 -> wire name: "WIRE_PING"
