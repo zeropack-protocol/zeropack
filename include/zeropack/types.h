@@ -22,7 +22,7 @@ typedef struct {
     size_t len;
 } zp_iovec_t;
 
-typedef struct zp_s zp_t;
+typedef struct zp_ctx_s zp_ctx_t;
 
 #define ZP_PRIMITIVES(X) \
     X(u8) X(u16) X(u32) X(u64) \

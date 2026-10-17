@@ -9,14 +9,14 @@
 
 #define ZP_SLICE(n, s) .n##_buf = (s), .n##_cap = sizeof(s)
 
-#define ZP_LOCK(zp, target)                                 \
-    do {                                                    \
-        if ((zp)->lock) (zp)->lock(target, (zp)->userdata); \
+#define ZP_LOCK(ctx, target)                                     \
+    do {                                                         \
+        if ((ctx)->lock) (ctx)->lock(target, (ctx)->userdata);   \
     } while (0)
 
-#define ZP_UNLOCK(zp, target)                                   \
-    do {                                                        \
-        if ((zp)->unlock) (zp)->unlock(target, (zp)->userdata); \
+#define ZP_UNLOCK(ctx, target)                                       \
+    do {                                                             \
+        if ((ctx)->unlock) (ctx)->unlock(target, (ctx)->userdata);   \
     } while (0)
 
 typedef enum {
@@ -27,7 +27,7 @@ typedef enum {
 typedef void (*zp_lock_fn_t)(zp_lock_target_t target, void* userdata);
 typedef zp_ssize_t (*zp_writev_fn_t)(const zp_iovec_t* iov, int iovcnt);
 
-typedef struct zp_s {
+struct zp_ctx_s {
     const zp_schema_t* schema;
 
     zp_lock_fn_t lock;
@@ -44,7 +44,7 @@ typedef struct zp_s {
     size_t pool_len;
 
     void* userdata;
-} zp_t;
+};
 
 typedef struct {
     const zp_schema_t* schema;
@@ -63,10 +63,10 @@ typedef struct {
     void* userdata;
 } zp_config_t;
 
-int zp_init(zp_t* zp, const zp_config_t* cfg);
+int zp_init(zp_ctx_t* ctx, const zp_config_t* cfg);
 
 zp_ssize_t zp_send(
-    zp_t* zp,
+    zp_ctx_t* ctx,
     uint8_t action,
     uint16_t count,
     const void* payload,
@@ -74,7 +74,7 @@ zp_ssize_t zp_send(
 );
 
 zp_ssize_t zp_send_raw(
-    zp_t* zp,
+    zp_ctx_t* ctx,
     uint8_t action,
     uint8_t type_id,
     uint16_t count,
@@ -82,9 +82,9 @@ zp_ssize_t zp_send_raw(
     size_t size
 );
 
-void zp_send_handshake(zp_t* zp);
-uint8_t* zp_rx_get_buffer(zp_t* zp, size_t* out_available_len);
-void zp_rx_commit(zp_t* zp, size_t len);
+void zp_send_handshake(zp_ctx_t* ctx);
+uint8_t* zp_rx_get_buffer(zp_ctx_t* ctx, size_t* out_available_len);
+void zp_rx_commit(zp_ctx_t* ctx, size_t len);
 void zp_emit_log(
-    zp_t* zp, zp_log_level_t level, zp_log_code_t code, uint16_t extra
+    zp_ctx_t* ctx, zp_log_level_t level, zp_log_code_t code, uint16_t extra
 );

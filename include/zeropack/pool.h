@@ -23,26 +23,26 @@ typedef struct {
 #define ZP_SLOT_TOTAL_SIZE(data_len) \
     ZP_ALIGN8(sizeof(zp_pool_slot_t) + (data_len))
 
-void zp_pool_reset(zp_t* zp);
-size_t zp_pool_used(const zp_t* zp);
-size_t zp_pool_free(const zp_t* zp);
+void zp_pool_reset(zp_ctx_t* ctx);
+size_t zp_pool_used(const zp_ctx_t* ctx);
+size_t zp_pool_free(const zp_ctx_t* ctx);
 
 poolref_t zp_pool_push(
-    zp_t* zp, uint8_t type_id, const void* data, uint16_t count
+    zp_ctx_t* ctx, uint8_t type_id, const void* data, uint16_t count
 );
 bool zp_pool_edit(
-    zp_t* zp, poolref_t ref, uint8_t type_id, const void* data, uint16_t count
+    zp_ctx_t* ctx, poolref_t ref, uint8_t type_id, const void* data, uint16_t count
 );
 
-#define zp_pool_get(zp, ref) \
-    ((void*)((zp)->pool_buf + (ref) + sizeof(zp_pool_slot_t)))
-#define zp_pool_slot(zp, ref) ((zp_pool_slot_t*)((zp)->pool_buf + (ref)))
+#define zp_pool_get(ctx, ref) \
+    ((void*)((ctx)->pool_buf + (ref) + sizeof(zp_pool_slot_t)))
+#define zp_pool_slot(ctx, ref) ((zp_pool_slot_t*)((ctx)->pool_buf + (ref)))
 
-bool zp_pool_is_valid(const zp_t* zp, poolref_t ref);
-void* zp_pool_get_safe(zp_t* zp, poolref_t ref);
+bool zp_pool_is_valid(const zp_ctx_t* ctx, poolref_t ref);
+void* zp_pool_get_safe(zp_ctx_t* ctx, poolref_t ref);
 
-#define zp_pool_str(zp, s) \
-    zp_pool_push((zp), TYPE_ID_u8, (s), (uint16_t)(zp_strlen(s) + 1))
-#define zp_pool_val(zp, type, v) zp_pool_push((zp), TYPE_ID_##type, &(v), 1)
-#define zp_pool_arr(zp, type, ptr, count) \
-    zp_pool_push((zp), TYPE_ID_##type, (ptr), (count))
+#define zp_pool_str(ctx, s) \
+    zp_pool_push((ctx), TYPE_ID_u8, (s), (uint16_t)(zp_strlen(s) + 1))
+#define zp_pool_val(ctx, type, v) zp_pool_push((ctx), TYPE_ID_##type, &(v), 1)
+#define zp_pool_arr(ctx, type, ptr, count) \
+    zp_pool_push((ctx), TYPE_ID_##type, (ptr), (count))

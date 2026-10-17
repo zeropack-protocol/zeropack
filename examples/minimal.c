@@ -1,24 +1,23 @@
-#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "zeropack.h"
 #include "zeropack/core.h"
-#include "zeropack/schema.h"
 
 // -----------------------------------------------------------------------------
 // Schema Definition (Compile-time macros, no external codegen required)
 // -----------------------------------------------------------------------------
-#define APP_TYPES(X) X(SensorReport, SENSOR_FIELDS)
 
-#define SENSOR_FIELDS(S, F, A) \
-    F(S, f32, temperature)     \
-    F(S, f32, humidity)        \
+#define SENSOR_REPORT_FIELDS(S, F, A) \
+    F(S, f32, temperature)            \
+    F(S, f32, humidity)               \
     F(S, u32, timestamp)
 
-#define APP_ACTIONS(V, T, A)    \
-    V(ACTION_PING, "WIRE_PING") \
-    V(ACTION_PONG)              \
+#define APP_TYPES(X) X(SensorReport, SENSOR_REPORT_FIELDS)
+
+#define APP_ACTIONS(V, T, A)                    \
+    V(ACTION_PING, "WIRE_PING")                 \
+    V(ACTION_PONG)                              \
     T(ACTION_REPORT, SensorReport, "WIRE_REPORT")
 
 ZP_DECLARE(APP_TYPES, APP_ACTIONS)
@@ -30,12 +29,12 @@ ZP_GENERATE_SCHEMA(example_schema, APP_TYPES, APP_ACTIONS)
 // Simulated Loopback Transport (Writes directly into ZeroPack's leased rx
 // buffer)
 // -----------------------------------------------------------------------------
-static zp_t s_zp;
+static zp_ctx_t s_ctx;
 static size_t s_pending_rx_len = 0;
 
 static zp_ssize_t loopback_writev(const zp_iovec_t* iov, int iovcnt) {
     size_t avail = 0;
-    uint8_t* rx_buf = zp_rx_get_buffer(&s_zp, &avail);
+    uint8_t* rx_buf = zp_rx_get_buffer(&s_ctx, &avail);
     if (!rx_buf) return -1;
 
     zp_ssize_t written = 0;
@@ -50,27 +49,27 @@ static zp_ssize_t loopback_writev(const zp_iovec_t* iov, int iovcnt) {
     return written;
 }
 
-static void flush_bus_to_receiver(zp_t* zp, const char* label) {
+static void flush_bus_to_receiver(zp_ctx_t* ctx, const char* label) {
     printf(
         "\n--> Transport: Transmitting %zu bytes [%s]...\n",
         s_pending_rx_len,
         label
     );
     // Commit the leased buffer directly into ZeroPack's receiver state machine
-    zp_rx_commit(zp, s_pending_rx_len);
+    zp_rx_commit(ctx, s_pending_rx_len);
     s_pending_rx_len = 0;
 }
 
 // -----------------------------------------------------------------------------
 // Action Handlers (Callbacks)
 // -----------------------------------------------------------------------------
-static void on_ping(zp_t* zp) {
-    (void)zp;
+static void on_ping(zp_ctx_t* ctx) {
+    (void)ctx;
     printf("  [Callback] Handled ACTION_PING (void action)\n");
 }
 
-static void on_report(zp_t* zp, const SensorReport* report) {
-    (void)zp;
+static void on_report(zp_ctx_t* ctx, const SensorReport* report) {
+    (void)ctx;
     printf("  [Callback] Handled ACTION_REPORT:\n");
     printf("    Temperature : %.2f C\n", (double)report->temperature);
     printf("    Humidity    : %.2f %%\n", (double)report->humidity);
@@ -91,7 +90,7 @@ int main(void) {
     zp_on_action(example_schema, ACTION_REPORT, on_report);
 
     zp_init(
-        &s_zp,
+        &s_ctx,
         &(zp_config_t){
             .schema = &example_schema,
             .writev = loopback_writev,
@@ -102,8 +101,8 @@ int main(void) {
 
     // Emit a void action (no payload)
     printf("\n[Step 1] Emitting ACTION_PING...");
-    zp_emit(&s_zp, ACTION_PING);
-    flush_bus_to_receiver(&s_zp, "ACTION_PING");
+    zp_emit(&s_ctx, ACTION_PING);
+    flush_bus_to_receiver(&s_ctx, "ACTION_PING");
 
     // Emit a structured action
     SensorReport sample = {
@@ -112,12 +111,12 @@ int main(void) {
         .timestamp = 42000,
     };
     printf("\n[Step 2] Emitting ACTION_REPORT (SensorReport payload)...");
-    zp_emit(&s_zp, ACTION_REPORT, &sample);
-    flush_bus_to_receiver(&s_zp, "ACTION_REPORT");
+    zp_emit(&s_ctx, ACTION_REPORT, &sample);
+    flush_bus_to_receiver(&s_ctx, "ACTION_REPORT");
 
     // Send binary handshake schema
     printf("\n[Step 3] Emitting self-describing binary handshake...\n");
-    zp_send_handshake(&s_zp);
+    zp_send_handshake(&s_ctx);
     printf(
         "  Handshake binary size: %zu bytes (contains complete schema & field "
         "definitions)\n",
