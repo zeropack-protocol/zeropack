@@ -9,61 +9,60 @@
 
 typedef struct {
     const char* name;
-    const struct_desc_t* type;
+    const zp_type_meta_t* type;
     uint16_t offset;
     uint16_t length;
-} field_desc_t;
+} zp_field_meta_t;
 
-struct struct_desc_s {
+struct zp_type_meta_s {
     const char* name;
-    const field_desc_t* fields;
+    const zp_field_meta_t* fields;
     uint16_t size;
     uint8_t count;
 };
 
 typedef struct {
     const char* name;
-    const struct_desc_t* type;
+    const zp_type_meta_t* type;
     uint8_t is_array;
-} action_desc_t;
+} zp_action_meta_t;
 
 typedef struct {
-    const struct_desc_t* const* types;
-    const action_desc_t* actions;
+    const zp_type_meta_t* const* types;
+    const zp_action_meta_t* actions;
     zp_dispatch_fn_t dispatch;
     uint8_t type_count;
     uint8_t action_count;
 } zp_schema_t;
 
-uint8_t zp_get_meta_id(const zp_schema_t* schema, const struct_desc_t* meta);
+uint8_t zp_get_meta_id(const zp_schema_t* schema, const zp_type_meta_t* meta);
 uint8_t zp_get_action_type_id(const zp_schema_t* schema, uint8_t action);
-const char* get_type_name(const zp_schema_t* schema, uint8_t type_id);
-size_t get_type_size(const zp_schema_t* schema, uint8_t type_id);
+size_t zp_get_type_size(const zp_schema_t* schema, uint8_t type_id);
 
-#define FIELD_DESC(_struct, _type, _name) \
-    {.name = #_name,                      \
-     .type = &__zp_meta_##_type,          \
-     .offset = offsetof(_struct, _name),  \
+#define _ZP_FIELD_META(_struct, _type, _name) \
+    {.name = #_name,                          \
+     .type = &__zp_meta_##_type,              \
+     .offset = offsetof(_struct, _name),      \
      .length = 0},
-#define ARRAY_DESC(_struct, _type, _name, _len) \
-    {.name = #_name,                            \
-     .type = &__zp_meta_##_type,                \
-     .offset = offsetof(_struct, _name),        \
+#define _ZP_ARRAY_META(_struct, _type, _name, _len) \
+    {.name = #_name,                                \
+     .type = &__zp_meta_##_type,                    \
+     .offset = offsetof(_struct, _name),            \
      .length = _len},
 
-#define MAKE_STRUCT_META(StructName, FieldsMacro)            \
-    static const field_desc_t __zp_fields_##StructName[] = { \
-        FieldsMacro(StructName, FIELD_DESC, ARRAY_DESC)      \
-    };                                                       \
-    static const struct_desc_t __zp_meta_##StructName = {    \
-        .name = #StructName,                                 \
-        .fields = __zp_fields_##StructName,                  \
-        .size = sizeof(StructName),                          \
-        .count = sizeof(__zp_fields_##StructName) /          \
-                 sizeof(__zp_fields_##StructName[0]),        \
+#define _ZP_MAKE_TYPE_META(StructName, FieldsMacro)               \
+    static const zp_field_meta_t __zp_fields_##StructName[] = {   \
+        FieldsMacro(StructName, _ZP_FIELD_META, _ZP_ARRAY_META)   \
+    };                                                            \
+    static const zp_type_meta_t __zp_meta_##StructName = {        \
+        .name = #StructName,                                      \
+        .fields = __zp_fields_##StructName,                       \
+        .size = sizeof(StructName),                               \
+        .count = sizeof(__zp_fields_##StructName) /               \
+                 sizeof(__zp_fields_##StructName[0]),             \
     };
 
-#define ZP_GEN_TYPE_META(TypesMacro) TypesMacro(MAKE_STRUCT_META)
+#define ZP_GEN_TYPE_META(TypesMacro) TypesMacro(_ZP_MAKE_TYPE_META)
 
 #define ZP_GENERATE_TYPES(TypesMacro) \
     ZP_GEN_TYPE_DECL(TypesMacro)      \
@@ -78,12 +77,12 @@ size_t get_type_size(const zp_schema_t* schema, uint8_t type_id);
     ZP_GENERATE_TYPES(TypesMacro)            \
     ZP_DECLARE_ACTIONS(ActionsMacro)
 
-#define REF_STRUCT_META(StructName, ...) &__zp_meta_##StructName,
+#define _ZP_REF_TYPE_META(StructName, ...) &__zp_meta_##StructName,
 
 // clang-format off
 #define ZP_GENERATE_SCHEMA(Name, TypesMacro, ActionsMacro)                    \
-    static const action_desc_t Name##_actions[] = {                           \
-        ActionsMacro(ACTION_V, ACTION_T, ACTION_A)                            \
+    static const zp_action_meta_t Name##_actions[] = {                        \
+        ActionsMacro(_ZP_ACTION_V, _ZP_ACTION_T, _ZP_ACTION_A)                \
     };                                                                        \
                                                                               \
     _Static_assert(                                                           \
@@ -96,9 +95,9 @@ size_t get_type_size(const zp_schema_t* schema, uint8_t type_id);
                             sizeof(Name##_actions[0])])(void) = {0};          \
                                                                               \
     static bool Name##_dispatch(                                              \
-        zp_ctx_t* ctx, const zp_header_t* hdr, const uint8_t* payload, size_t len \
+        zp_ctx_t* ctx, const zp_header_t* hdr, const void* payload            \
     ) {                                                                       \
-        (void)ctx; (void)hdr; (void)payload; (void)len;                       \
+        (void)ctx; (void)hdr; (void)payload;                                  \
         void (** const __zp_callbacks)(void) = __##Name##_callbacks;          \
         switch (hdr->action) {                                                \
             ActionsMacro(ZP_DISPATCH_V, ZP_DISPATCH_T, ZP_DISPATCH_A)         \
@@ -107,8 +106,8 @@ size_t get_type_size(const zp_schema_t* schema, uint8_t type_id);
         }                                                                     \
     }                                                                         \
                                                                               \
-    static const struct_desc_t* const Name##_types[] = {                      \
-        TypesMacro(REF_STRUCT_META)                                           \
+    static const zp_type_meta_t* const Name##_types[] = {                     \
+        TypesMacro(_ZP_REF_TYPE_META)                                         \
     };                                                                        \
                                                                               \
     _Static_assert(                                                           \

@@ -30,23 +30,29 @@ typedef struct zp_ctx_s zp_ctx_t;
     X(f32) X(f64) X(bool) X(poolref_t)
 // clang-format on
 
-#define GEN_PRIM_TYPE_ID(name) TYPE_ID_##name,
+#define _ZP_GEN_PRIM_TYPE_ID(name) TYPE_ID_##name,
 enum {
     TYPE_ID_NONE = 0,
-    ZP_PRIMITIVES(GEN_PRIM_TYPE_ID) TYPE_ID_START,
+    ZP_PRIMITIVES(_ZP_GEN_PRIM_TYPE_ID) TYPE_ID_START,
 };
-#define MAKE_FIELD(S, type, name) type name;
-#define MAKE_ARRAY(S, type, name, len) type name[len];
-#define DEFINE_TYPE(StructName, FieldsMacro)            \
-    typedef struct StructName {                         \
-        FieldsMacro(StructName, MAKE_FIELD, MAKE_ARRAY) \
+#undef _ZP_GEN_PRIM_TYPE_ID
+
+#define _ZP_MAKE_FIELD(S, type, name) type name;
+#define _ZP_MAKE_ARRAY(S, type, name, len) type name[len];
+#define _ZP_DEFINE_TYPE(StructName, FieldsMacro)                \
+    typedef struct StructName {                                 \
+        FieldsMacro(StructName, _ZP_MAKE_FIELD, _ZP_MAKE_ARRAY) \
     } StructName;
 
-#define ZP_GEN_TYPE_DECL(TypesMacro) TypesMacro(DEFINE_TYPE)
-#define ZP_DECLARE_STRUCTS(TypesMacro) ZP_GEN_TYPE_DECL(TypesMacro)
+#define ZP_GEN_TYPE_DECL(TypesMacro) TypesMacro(_ZP_DEFINE_TYPE)
 
-typedef struct struct_desc_s struct_desc_t;
+typedef struct zp_type_meta_s zp_type_meta_t;
 
-#define ZP_DECL_PRIM_META(p) extern const struct_desc_t __zp_meta_##p;
-ZP_PRIMITIVES(ZP_DECL_PRIM_META)
+#define _ZP_DECL_PRIM_META(p) extern const zp_type_meta_t __zp_meta_##p;
+ZP_PRIMITIVES(_ZP_DECL_PRIM_META)
+#undef _ZP_DECL_PRIM_META
+
+#define zp_type_meta(T) (&__zp_meta_##T)
+#define zp_type_name(T) (__zp_meta_##T.name)
+#define zp_type_size(T) (__zp_meta_##T.size)
 

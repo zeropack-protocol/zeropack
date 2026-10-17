@@ -65,14 +65,6 @@ typedef struct {
 
 int zp_init(zp_ctx_t* ctx, const zp_config_t* cfg);
 
-zp_ssize_t zp_send(
-    zp_ctx_t* ctx,
-    uint8_t action,
-    uint16_t count,
-    const void* payload,
-    size_t size
-);
-
 zp_ssize_t zp_send_raw(
     zp_ctx_t* ctx,
     uint8_t action,

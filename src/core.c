@@ -21,14 +21,22 @@ void zp_emit_log(
     );
 }
 
-static inline zp_ssize_t zp_send_buf(zp_ctx_t* ctx, const void* buf, size_t len) {
-    if (!ctx || !ctx->writev) return -1;
-    zp_iovec_t iov = {.buf = buf, .len = len};
-    return ctx->writev(&iov, 1);
+static void zp_send_pair(
+    zp_ctx_t* ctx,
+    const void* hdr,
+    size_t hdr_len,
+    const void* data,
+    size_t data_len
+) {
+    zp_iovec_t iov[2] = {
+        {.buf = hdr, .len = hdr_len},
+        {.buf = data, .len = data_len},
+    };
+    ctx->writev(iov, (data && data_len > 0) ? 2 : 1);
 }
 
 void zp_send_handshake(zp_ctx_t* ctx) {
-    if (!ctx || !ctx->schema) return;
+    if (!ctx || !ctx->schema || !ctx->writev) return;
 
     uint16_t pool_item_count = 0;
     size_t offset = 0;
@@ -41,45 +49,56 @@ void zp_send_handshake(zp_ctx_t* ctx) {
         offset += total_slot;
     }
 
-    zp_handshake_t hs = {0};
-    hs.magic = 'Z';
-    hs.byteord = (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__);
-    hs.reserved = 0x28;  // 0b101000
-    hs.pool_size = (uint16_t)ctx->pool_cap;
-    hs.type_count = ctx->schema->type_count;
-    hs.action_count = ctx->schema->action_count;
-    hs.pool_item_count = pool_item_count;
+    zp_handshake_t hs = {
+        .magic = 'Z',
+        .byteord = (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__),
+        .reserved = 0x28,  // 0b101000
+        .pool_size = (uint16_t)ctx->pool_cap,
+        .type_count = ctx->schema->type_count,
+        .action_count = ctx->schema->action_count,
+        .pool_item_count = pool_item_count,
+    };
 
     ZP_LOCK(ctx, ZP_LOCK_TX);
-    zp_send_buf(ctx, &hs, sizeof(hs));
+    zp_send_pair(ctx, &hs, sizeof(hs), NULL, 0);
 
     for (uint8_t i = 0; i < ctx->schema->type_count; i++) {
-        const struct_desc_t* t = ctx->schema->types[i];
+        const zp_type_meta_t* t = ctx->schema->types[i];
+        struct __attribute__((packed)) {
+            uint8_t type_id;
+            uint8_t count;
+            uint16_t size;
+        } t_hdr = {(uint8_t)(TYPE_ID_START + i), t->count, t->size};
 
-        uint8_t type_id = (uint8_t)(TYPE_ID_START + i);
-        zp_send_buf(ctx, &type_id, sizeof(type_id));
-        zp_send_buf(ctx, &t->count, sizeof(t->count));
-        zp_send_buf(ctx, &t->size, sizeof(t->size));
-        zp_send_buf(ctx, t->name, zp_strlen(t->name) + 1);
+        zp_send_pair(
+            ctx, &t_hdr, sizeof(t_hdr), t->name, zp_strlen(t->name) + 1
+        );
 
         for (uint8_t j = 0; j < t->count; j++) {
-            const field_desc_t* f = &t->fields[j];
+            const zp_field_meta_t* f = &t->fields[j];
+            struct __attribute__((packed)) {
+                uint8_t type;
+                uint16_t offset;
+                uint16_t length;
+            } f_hdr = {
+                zp_get_meta_id(ctx->schema, f->type), f->offset, f->length
+            };
 
-            uint8_t f_type = zp_get_meta_id(ctx->schema, f->type);
-            zp_send_buf(ctx, &f_type, sizeof(f_type));
-            zp_send_buf(ctx, &f->offset, sizeof(f->offset));
-            zp_send_buf(ctx, &f->length, sizeof(f->length));
-            zp_send_buf(ctx, f->name, zp_strlen(f->name) + 1);
+            zp_send_pair(
+                ctx, &f_hdr, sizeof(f_hdr), f->name, zp_strlen(f->name) + 1
+            );
         }
     }
 
     for (uint8_t i = 0; i < ctx->schema->action_count; i++) {
-        const action_desc_t* a = &ctx->schema->actions[i];
+        const zp_action_meta_t* a = &ctx->schema->actions[i];
+        uint8_t a_hdr[2] = {
+            zp_get_action_type_id(ctx->schema, i), a->is_array
+        };
 
-        uint8_t type_id = zp_get_action_type_id(ctx->schema, i);
-        zp_send_buf(ctx, &type_id, sizeof(type_id));
-        zp_send_buf(ctx, &a->is_array, sizeof(a->is_array));
-        zp_send_buf(ctx, a->name, zp_strlen(a->name) + 1);
+        zp_send_pair(
+            ctx, a_hdr, sizeof(a_hdr), a->name, zp_strlen(a->name) + 1
+        );
     }
 
     offset = 0;
@@ -88,14 +107,17 @@ void zp_send_handshake(zp_ctx_t* ctx) {
         size_t total_slot = sizeof(zp_pool_slot_t) + (size_t)slot->cap;
         if (slot->cap == 0 || total_slot > pool_used - offset) break;
 
-        size_t type_size = get_type_size(ctx->schema, slot->type_id);
+        size_t type_size = zp_get_type_size(ctx->schema, slot->type_id);
         size_t data_len = type_size * (size_t)slot->count;
+        struct __attribute__((packed)) {
+            poolref_t ref;
+            uint8_t type_id;
+            uint16_t count;
+        } p_hdr = {(poolref_t)offset, slot->type_id, slot->count};
 
-        poolref_t ref = (poolref_t)offset;
-        zp_send_buf(ctx, &ref, sizeof(ref));
-        zp_send_buf(ctx, &slot->type_id, sizeof(slot->type_id));
-        zp_send_buf(ctx, &slot->count, sizeof(slot->count));
-        zp_send_buf(ctx, zp_pool_get(ctx, offset), data_len);
+        zp_send_pair(
+            ctx, &p_hdr, sizeof(p_hdr), zp_pool_get(ctx, offset), data_len
+        );
 
         offset += total_slot;
     }
@@ -103,20 +125,18 @@ void zp_send_handshake(zp_ctx_t* ctx) {
 }
 
 static void handle_internal(
-    zp_ctx_t* ctx, const zp_header_t* hdr, const uint8_t* payload, size_t len
+    zp_ctx_t* ctx, const zp_header_t* hdr, const uint8_t* payload
 ) {
     switch (hdr->action) {
         case ZP_SYS_ACTION_POOL_EDIT: {
-            if (len < sizeof(poolref_t) || hdr->count == 0) break;
-
             const poolref_t ref = *(const poolref_t*)payload;
             const void* data = payload + sizeof(poolref_t);
             zp_pool_edit(ctx, ref, hdr->type_id, data, hdr->count);
             break;
         }
         case ZP_SYS_ACTION_POOL_STORE: {
-            if (hdr->count == 0) break;
-            poolref_t ref = zp_pool_push(ctx, hdr->type_id, payload, hdr->count);
+            poolref_t ref =
+                zp_pool_push(ctx, hdr->type_id, payload, hdr->count);
 
             zp_send_raw(
                 ctx,
@@ -130,7 +150,9 @@ static void handle_internal(
         }
         case ZP_SYS_ACTION_POOL_RESET:
             zp_pool_reset(ctx);
-            zp_send_raw(ctx, ZP_SYS_ACTION_POOL_RESET, TYPE_ID_NONE, 0, NULL, 0);
+            zp_send_raw(
+                ctx, ZP_SYS_ACTION_POOL_RESET, TYPE_ID_NONE, 0, NULL, 0
+            );
             break;
         default:
             zp_emit_log(
@@ -170,10 +192,9 @@ void zp_rx_commit(zp_ctx_t* ctx, size_t len) {
     while (ctx->rx_len >= sizeof(zp_header_t)) {
         const zp_header_t* hdr = (const zp_header_t*)ctx->rx_buf;
         size_t payload_len = 0;
-        const action_desc_t* act = NULL;
 
         if (hdr->action == ZP_SYS_ACTION_POOL_EDIT) {
-            size_t type_size = get_type_size(ctx->schema, hdr->type_id);
+            size_t type_size = zp_get_type_size(ctx->schema, hdr->type_id);
             if (type_size == 0 || hdr->count == 0 ||
                 ctx->rx_cap < sizeof(zp_header_t) + sizeof(poolref_t) ||
                 (size_t)hdr->count >
@@ -191,7 +212,7 @@ void zp_rx_commit(zp_ctx_t* ctx, size_t len) {
             }
             payload_len = sizeof(poolref_t) + type_size * (size_t)hdr->count;
         } else if (hdr->action >= ZP_SYS_ACTION_START) {
-            size_t type_size = get_type_size(ctx->schema, hdr->type_id);
+            size_t type_size = zp_get_type_size(ctx->schema, hdr->type_id);
             if ((hdr->action == ZP_SYS_ACTION_POOL_STORE &&
                  (type_size == 0 || hdr->count == 0)) ||
                 (hdr->count > 0 && type_size == 0)) {
@@ -220,7 +241,7 @@ void zp_rx_commit(zp_ctx_t* ctx, size_t len) {
                 break;
             }
 
-            act = &ctx->schema->actions[hdr->action];
+            const zp_action_meta_t* act = &ctx->schema->actions[hdr->action];
             uint8_t expected_type =
                 zp_get_action_type_id(ctx->schema, hdr->action);
             bool valid_count =
@@ -257,15 +278,11 @@ void zp_rx_commit(zp_ctx_t* ctx, size_t len) {
         const uint8_t* payload = ctx->rx_buf + sizeof(zp_header_t);
 
         if (hdr->action >= ZP_SYS_ACTION_START) {
-            handle_internal(ctx, hdr, payload, payload_len);
-            goto advance;
-        }
-
-        if (!ctx->dispatch(ctx, hdr, payload, payload_len)) {
+            handle_internal(ctx, hdr, payload);
+        } else if (!ctx->dispatch(ctx, hdr, payload)) {
             zp_emit_log(ctx, ZP_LOG_WARN, ZP_ERR_NO_HOOK, hdr->action);
         }
 
-    advance:;
         size_t remaining = ctx->rx_len - total_packet_len;
         if (remaining > 0) {
             zp_memmove(ctx->rx_buf, ctx->rx_buf + total_packet_len, remaining);

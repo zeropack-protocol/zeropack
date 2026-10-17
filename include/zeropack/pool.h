@@ -22,7 +22,6 @@ typedef struct {
 _Static_assert(sizeof(zp_pool_slot_t) == 6, "zp_pool_slot_t must be 6 bytes");
 _Static_assert(_Alignof(zp_pool_slot_t) == 2, "zp_pool_slot_t must be 2-byte aligned");
 
-#define ZP_ALIGN4(x) (((x) + 3) & ~3)
 #define ZP_ALIGN8(x) (((x) + 7) & ~7)
 #define ZP_SLOT_TOTAL_SIZE(data_len) \
     ZP_ALIGN8(sizeof(zp_pool_slot_t) + (data_len))

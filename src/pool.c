@@ -40,7 +40,7 @@ poolref_t zp_pool_push(
         return 0xFFFF;
     }
 
-    size_t type_size = get_type_size(ctx->schema, type_id);
+    size_t type_size = zp_get_type_size(ctx->schema, type_id);
     if (type_size == 0) return 0xFFFF;
 
     if (ctx->pool_cap <= sizeof(zp_pool_slot_t) ||
@@ -104,7 +104,7 @@ bool zp_pool_edit(
         return false;
     }
 
-    size_t type_size = get_type_size(ctx->schema, type_id);
+    size_t type_size = zp_get_type_size(ctx->schema, type_id);
     if (type_size == 0 || (size_t)count > (size_t)slot->cap / type_size) {
         ZP_UNLOCK(ctx, ZP_LOCK_POOL);
         zp_emit_log(ctx, ZP_LOG_ERROR, ZP_ERR_POOL_SLOT_EXCEEDED, count);
