@@ -23,9 +23,9 @@ void zp_mutex_unlock(zp_mutex_t* m) { (void)m; }
     F(S, u32, timestamp)
 
 #define APP_ACTIONS(V, T, A) \
-    V(ACTION_PING)           \
-    V(ACTION_PONG)           \
-    T(ACTION_REPORT, SensorReport)
+    V(ACTION_PING, "WIRE_PING") \
+    V(ACTION_PONG)              \
+    T(ACTION_REPORT, SensorReport, "WIRE_REPORT")
 
 // Declare type IDs, structs, and dispatcher prototypes
 ZP_DECLARE(APP_TYPES, APP_ACTIONS)
@@ -115,6 +115,11 @@ int main(void) {
     zp_send_handshake();
     printf("  Handshake binary size: %zu bytes (contains complete schema & field definitions)\n", s_pending_rx_len);
     s_pending_rx_len = 0;
+
+    printf("\n[Step 4] Verifying Wire Aliases in Runtime Schema Metadata:\n");
+    for (int i = 0; i < zp_schema.action_count; i++) {
+        printf("  Action ID %d -> wire name: \"%s\"\n", i, zp_schema.actions[i].name);
+    }
 
     printf("\n=== Execution completed successfully! ===\n");
     return 0;
