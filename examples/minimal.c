@@ -64,11 +64,13 @@ static void flush_bus_to_receiver(zp_t* zp, const char* label) {
 // -----------------------------------------------------------------------------
 // Action Handlers (Callbacks)
 // -----------------------------------------------------------------------------
-static void on_ping(void) {
+static void on_ping(zp_t* zp) {
+    (void)zp;
     printf("  [Callback] Handled ACTION_PING (void action)\n");
 }
 
-static void on_report(const SensorReport* report) {
+static void on_report(zp_t* zp, const SensorReport* report) {
+    (void)zp;
     printf("  [Callback] Handled ACTION_REPORT:\n");
     printf("    Temperature : %.2f C\n", (double)report->temperature);
     printf("    Humidity    : %.2f %%\n", (double)report->humidity);

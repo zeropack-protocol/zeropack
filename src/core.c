@@ -210,7 +210,7 @@ void zp_rx_commit(zp_t* zp, size_t len) {
             goto advance;
         }
 
-        if (!zp->dispatch(hdr, payload, payload_len)) {
+        if (!zp->dispatch(zp, hdr, payload, payload_len)) {
             zp_emit_log(zp, ZP_LOG_WARN, ZP_ERR_NO_HOOK, hdr->action);
         }
 

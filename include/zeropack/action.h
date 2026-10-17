@@ -65,12 +65,12 @@ zp_ssize_t zp_send_raw(
 #define ZP_DECLARE_ACTION_IDS(ActionsMacro) \
     enum { ActionsMacro(GEN_ACTION_ID, GEN_ACTION_ID, GEN_ACTION_ID) };
 
-#define _ZP_DISPATCH_V_1(name)                          \
-    case name:                                          \
-        if (__zp_callbacks[name]) {                     \
-            ((zp_cb_##name##_t)__zp_callbacks[name])(); \
-            return true;                                \
-        }                                               \
+#define _ZP_DISPATCH_V_1(name)                            \
+    case name:                                            \
+        if (__zp_callbacks[name]) {                       \
+            ((zp_cb_##name##_t)__zp_callbacks[name])(zp); \
+            return true;                                  \
+        }                                                 \
         return false;
 #define _ZP_DISPATCH_V_2(name, alias) _ZP_DISPATCH_V_1(name)
 #define _ZP_GET_DISP_V(_1, _2, NAME, ...) NAME
@@ -82,7 +82,7 @@ zp_ssize_t zp_send_raw(
 #define _ZP_DISPATCH_T_2(name, type)                                        \
     case name:                                                              \
         if (__zp_callbacks[name] && len >= sizeof(type)) {                  \
-            ((zp_cb_##name##_t)__zp_callbacks[name])((const type*)payload); \
+            ((zp_cb_##name##_t)__zp_callbacks[name])(zp, (const type*)payload); \
             return true;                                                    \
         }                                                                   \
         return false;
@@ -98,7 +98,7 @@ zp_ssize_t zp_send_raw(
         if (__zp_callbacks[name] &&                     \
             len >= (size_t)hdr->count * sizeof(type)) { \
             ((zp_cb_##name##_t)__zp_callbacks[name])(   \
-                (const type*)payload, hdr->count        \
+                zp, (const type*)payload, hdr->count    \
             );                                          \
             return true;                                \
         }                                               \
@@ -110,21 +110,21 @@ zp_ssize_t zp_send_raw(
         __VA_ARGS__                                                     \
     )
 
-#define _ZP_CB_TYPE_V_1(name) typedef void (*zp_cb_##name##_t)(void);
+#define _ZP_CB_TYPE_V_1(name) typedef void (*zp_cb_##name##_t)(zp_t* zp);
 #define _ZP_CB_TYPE_V_2(name, alias) _ZP_CB_TYPE_V_1(name)
 #define _ZP_GET_CB_V(_1, _2, NAME, ...) NAME
 #define ZP_CB_TYPE_V(...) \
     _ZP_GET_CB_V(__VA_ARGS__, _ZP_CB_TYPE_V_2, _ZP_CB_TYPE_V_1, 0)(__VA_ARGS__)
 
 #define _ZP_CB_TYPE_T_2(name, type) \
-    typedef void (*zp_cb_##name##_t)(const type* data);
+    typedef void (*zp_cb_##name##_t)(zp_t* zp, const type* data);
 #define _ZP_CB_TYPE_T_3(name, type, alias) _ZP_CB_TYPE_T_2(name, type)
 #define _ZP_GET_CB_T(_1, _2, _3, NAME, ...) NAME
 #define ZP_CB_TYPE_T(...) \
     _ZP_GET_CB_T(__VA_ARGS__, _ZP_CB_TYPE_T_3, _ZP_CB_TYPE_T_2, 0)(__VA_ARGS__)
 
 #define _ZP_CB_TYPE_A_2(name, type) \
-    typedef void (*zp_cb_##name##_t)(const type* data, uint16_t count);
+    typedef void (*zp_cb_##name##_t)(zp_t* zp, const type* data, uint16_t count);
 #define _ZP_CB_TYPE_A_3(name, type, alias) _ZP_CB_TYPE_A_2(name, type)
 #define _ZP_GET_CB_A(_1, _2, _3, NAME, ...) NAME
 #define ZP_CB_TYPE_A(...) \
@@ -194,5 +194,5 @@ zp_ssize_t zp_send_raw(
     } while (0)
 
 typedef bool (*zp_dispatch_fn_t)(
-    const zp_header_t* hdr, const uint8_t* payload, size_t len
+    zp_t* zp, const zp_header_t* hdr, const uint8_t* payload, size_t len
 );

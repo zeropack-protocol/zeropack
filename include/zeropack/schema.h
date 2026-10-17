@@ -96,9 +96,9 @@ size_t get_type_size(const zp_schema_t* schema, uint8_t type_id);
                             sizeof(Name##_actions[0])])(void) = {0};          \
                                                                               \
     static bool Name##_dispatch(                                              \
-        const zp_header_t* hdr, const uint8_t* payload, size_t len            \
+        zp_t* zp, const zp_header_t* hdr, const uint8_t* payload, size_t len  \
     ) {                                                                       \
-        (void)hdr; (void)payload; (void)len;                                  \
+        (void)zp; (void)hdr; (void)payload; (void)len;                        \
         void (** const __zp_callbacks)(void) = __##Name##_callbacks;          \
         switch (hdr->action) {                                                \
             ActionsMacro(ZP_DISPATCH_V, ZP_DISPATCH_T, ZP_DISPATCH_A)         \
