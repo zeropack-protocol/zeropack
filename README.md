@@ -167,11 +167,7 @@ Lease ingress space directly from ZeroPack's RX buffer (ideal for DMA or non-blo
 
 ```c
 void on_uart_rx_ready(zp_ctx_t* ctx) {
-    size_t avail = 0;
-    uint8_t* rx_slot = zp_rx_get_buffer(ctx, &avail);
-    if (!rx_slot) return;
-
-    size_t received = uart_read_bytes(rx_slot, avail);
+    size_t received = uart_read_bytes(zp_rx_buf(ctx), zp_rx_avail(ctx));
     zp_rx_commit(ctx, received);
 }
 ```

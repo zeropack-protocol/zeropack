@@ -54,7 +54,7 @@ poolref_t zp_pool_push(
 
     ZP_LOCK(ctx, ZP_LOCK_POOL);
 
-    if (total_slot > ctx->pool_cap - ctx->pool_len) {
+    if (total_slot > zp_pool_avail(ctx)) {
         ZP_UNLOCK(ctx, ZP_LOCK_POOL);
         zp_emit_log(ctx, ZP_LOG_ERROR, ZP_ERR_POOL_FULL, (uint16_t)total_slot);
         return 0xFFFF;
@@ -125,11 +125,4 @@ void zp_pool_reset(zp_ctx_t* ctx) {
     ZP_LOCK(ctx, ZP_LOCK_POOL);
     ctx->pool_len = 0;
     ZP_UNLOCK(ctx, ZP_LOCK_POOL);
-}
-
-size_t zp_pool_used(const zp_ctx_t* ctx) { return ctx ? ctx->pool_len : 0; }
-
-size_t zp_pool_free(const zp_ctx_t* ctx) {
-    if (!ctx || ctx->pool_cap < ctx->pool_len) return 0;
-    return ctx->pool_cap - ctx->pool_len;
 }

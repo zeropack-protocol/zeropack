@@ -40,11 +40,10 @@ void zp_send_handshake(zp_ctx_t* ctx) {
 
     uint16_t pool_item_count = 0;
     size_t offset = 0;
-    size_t pool_used = zp_pool_used(ctx);
-    while (offset + sizeof(zp_pool_slot_t) <= pool_used) {
+    while (offset + sizeof(zp_pool_slot_t) <= ctx->pool_len) {
         zp_pool_slot_t* slot = zp_pool_slot(ctx, offset);
         size_t total_slot = sizeof(zp_pool_slot_t) + (size_t)slot->cap;
-        if (slot->cap == 0 || total_slot > pool_used - offset) break;
+        if (slot->cap == 0 || total_slot > ctx->pool_len - offset) break;
         pool_item_count++;
         offset += total_slot;
     }
@@ -102,10 +101,10 @@ void zp_send_handshake(zp_ctx_t* ctx) {
     }
 
     offset = 0;
-    while (offset + sizeof(zp_pool_slot_t) <= pool_used) {
+    while (offset + sizeof(zp_pool_slot_t) <= ctx->pool_len) {
         zp_pool_slot_t* slot = zp_pool_slot(ctx, offset);
         size_t total_slot = sizeof(zp_pool_slot_t) + (size_t)slot->cap;
-        if (slot->cap == 0 || total_slot > pool_used - offset) break;
+        if (slot->cap == 0 || total_slot > ctx->pool_len - offset) break;
 
         size_t type_size = zp_get_type_size(ctx->schema, slot->type_id);
         size_t data_len = type_size * (size_t)slot->count;
@@ -160,17 +159,6 @@ static void handle_internal(
             );
             break;
     }
-}
-
-uint8_t* zp_rx_get_buffer(zp_ctx_t* ctx, size_t* out_available_len) {
-    if (!ctx || !out_available_len) return NULL;
-    if (ctx->rx_len >= ctx->rx_cap) {
-        *out_available_len = 0;
-        return NULL;
-    }
-
-    *out_available_len = ctx->rx_cap - ctx->rx_len;
-    return ctx->rx_buf + ctx->rx_len;
 }
 
 void zp_rx_commit(zp_ctx_t* ctx, size_t len) {

@@ -33,9 +33,8 @@ static zp_ctx_t s_ctx;
 static size_t s_pending_rx_len = 0;
 
 static zp_ssize_t loopback_writev(const zp_iovec_t* iov, int iovcnt) {
-    size_t avail = 0;
-    uint8_t* rx_buf = zp_rx_get_buffer(&s_ctx, &avail);
-    if (!rx_buf) return -1;
+    uint8_t* rx_buf = zp_rx_buf(&s_ctx);
+    size_t avail = zp_rx_avail(&s_ctx);
 
     zp_ssize_t written = 0;
     for (int i = 0; i < iovcnt; i++) {

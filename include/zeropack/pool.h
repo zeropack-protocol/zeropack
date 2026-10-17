@@ -26,9 +26,9 @@ _Static_assert(_Alignof(zp_pool_slot_t) == 2, "zp_pool_slot_t must be 2-byte ali
 #define ZP_SLOT_TOTAL_SIZE(data_len) \
     ZP_ALIGN8(sizeof(zp_pool_slot_t) + (data_len))
 
+#define zp_pool_avail(ctx) ((ctx)->pool_cap - (ctx)->pool_len)
+
 void zp_pool_reset(zp_ctx_t* ctx);
-size_t zp_pool_used(const zp_ctx_t* ctx);
-size_t zp_pool_free(const zp_ctx_t* ctx);
 
 poolref_t zp_pool_push(
     zp_ctx_t* ctx, uint8_t type_id, const void* data, uint16_t count

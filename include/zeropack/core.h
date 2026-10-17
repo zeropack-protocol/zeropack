@@ -74,8 +74,10 @@ zp_ssize_t zp_send_raw(
     size_t size
 );
 
+#define zp_rx_buf(ctx) ((ctx)->rx_buf + (ctx)->rx_len)
+#define zp_rx_avail(ctx) ((ctx)->rx_cap - (ctx)->rx_len)
+
 void zp_send_handshake(zp_ctx_t* ctx);
-uint8_t* zp_rx_get_buffer(zp_ctx_t* ctx, size_t* out_available_len);
 void zp_rx_commit(zp_ctx_t* ctx, size_t len);
 void zp_emit_log(
     zp_ctx_t* ctx, zp_log_level_t level, zp_log_code_t code, uint16_t extra
