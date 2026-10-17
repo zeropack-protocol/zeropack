@@ -31,8 +31,8 @@ typedef struct {
     const struct_desc_t* const* types;
     const action_desc_t* actions;
     zp_dispatch_fn_t dispatch;
-    uint16_t type_count;
-    uint16_t action_count;
+    uint8_t type_count;
+    uint8_t action_count;
 } zp_schema_t;
 
 uint8_t zp_get_meta_id(const zp_schema_t* schema, const struct_desc_t* meta);
@@ -107,9 +107,15 @@ size_t get_type_size(const zp_schema_t* schema, uint8_t type_id);
         }                                                                     \
     }                                                                         \
                                                                               \
-    static const struct_desc_t* const Name##_types[] = {                             \
+    static const struct_desc_t* const Name##_types[] = {                      \
         TypesMacro(REF_STRUCT_META)                                           \
     };                                                                        \
+                                                                              \
+    _Static_assert(                                                           \
+        (sizeof(Name##_types) / sizeof(Name##_types[0])) <=                   \
+            (255 - TYPE_ID_START),                                            \
+        "Struct type limit exceeded"                                          \
+    );                                                                        \
                                                                               \
     const zp_schema_t Name = {                                                \
         .types = Name##_types,                                                \

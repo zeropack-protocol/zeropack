@@ -8,8 +8,8 @@ typedef struct __attribute__((packed)) {
     uint8_t reserved : 7;
 
     uint16_t pool_size;
-    uint16_t type_count;
-    uint16_t action_count;
+    uint8_t type_count;
+    uint8_t action_count;
     uint16_t pool_item_count;
 } zp_handshake_t;
 
@@ -40,7 +40,6 @@ typedef enum {
     ZP_ERR_POOL_READONLY,
     ZP_ERR_POOL_TYPE_MISMATCH,
     ZP_ERR_POOL_SLOT_EXCEEDED,
-    ZP_ERR_POOL_SLOT_SHRUNK,
     ZP_ERR_UNKNOWN_INTERNAL_ACTION,
 } zp_log_code_t;
 
