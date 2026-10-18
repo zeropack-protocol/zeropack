@@ -106,7 +106,10 @@ ZP_GENERATE_SCHEMA(app_schema, APP_TYPES, APP_ACTIONS)
 ZeroPack requires only a simple scatter-gather `writev` implementation:
 
 ```c
-static zp_ssize_t my_uart_writev(const zp_iovec_t* iov, int iovcnt) {
+static zp_ssize_t my_uart_writev(
+    zp_ctx_t* ctx, const zp_iovec_t* iov, int iovcnt
+) {
+    (void)ctx;
     zp_ssize_t total = 0;
     for (int i = 0; i < iovcnt; i++) {
         uart_send_blocking(iov[i].buf, iov[i].len);
@@ -128,8 +131,8 @@ zp_ctx_t ctx;
 zp_init(&ctx, &(zp_config_t){
     .schema = &app_schema,
     .writev = my_uart_writev,
-    ZP_SLICE(rx, s_rx_buf),
-    ZP_SLICE(pool, s_pool_buf),
+    ZP_BUFFER(rx, s_rx_buf),
+    ZP_BUFFER(pool, s_pool_buf),
 });
 ```
 
@@ -172,6 +175,20 @@ void on_uart_rx_ready(zp_ctx_t* ctx) {
 }
 ```
 
+### 6. Type-Safe Static Memory Pool
+
+ZeroPack includes a linear static memory pool with type-validated references:
+
+```c
+// Store values, slices, and C-strings safely into the pool
+poolref_t ref_val = zp_pool_push_val(ctx, SensorReport, sample);
+poolref_t ref_str = zp_pool_push_str(ctx, "Sensor OK");
+
+// Retrieve with strict compile-time casting and runtime type-tag verification
+SensorReport* report = zp_pool_get_typed(ctx, SensorReport, ref_val);
+char* status_str = zp_pool_get_str(ctx, ref_str);
+```
+
 ---
 
 ## Comparison Matrix
@@ -187,13 +204,15 @@ void on_uart_rx_ready(zp_ctx_t* ctx) {
 
 ---
 
-## Building and Running the Example
-
-A self-contained loopback example demonstrating action emission, typed callbacks, and binary handshake transmission is provided under `examples/`.
-
-Build and run using `make`:
-
+## Building and Testing
+ 
+A self-contained test suite and a loopback example demonstrating action emission, typed callbacks, and binary handshake transmission are provided.
+ 
 ```bash
+# Run unit tests (100% pure C11 freestanding suite)
+make test
+
+# Build and run minimal loopback example
 make example
 ```
 

@@ -4,6 +4,7 @@
 
 #include "zeropack/config.h"
 #include "zeropack/core.h"
+#include "zeropack/protocol.h"
 #include "zeropack/types.h"
 
 bool zp_pool_is_valid(const zp_ctx_t* ctx, poolref_t ref) {
@@ -28,8 +29,16 @@ bool zp_pool_is_valid(const zp_ctx_t* ctx, poolref_t ref) {
     return false;
 }
 
-void* zp_pool_get_safe(zp_ctx_t* ctx, poolref_t ref) {
-    return zp_pool_is_valid(ctx, ref) ? zp_pool_get(ctx, ref) : NULL;
+void* zp_pool_get_checked(
+    const zp_ctx_t* ctx, uint8_t type_id, poolref_t ref, uint16_t* out_count
+) {
+    if (!zp_pool_is_valid(ctx, ref)) return NULL;
+
+    const zp_pool_slot_t* slot = zp_pool_slot(ctx, ref);
+    if (slot->type_id != type_id) return NULL;
+
+    if (out_count) *out_count = slot->count;
+    return _zp_pool_get(ctx, ref);
 }
 
 poolref_t zp_pool_push(
@@ -45,7 +54,6 @@ poolref_t zp_pool_push(
 
     if (ctx->pool_cap <= sizeof(zp_pool_slot_t) ||
         (size_t)count > (ctx->pool_cap - sizeof(zp_pool_slot_t)) / type_size) {
-        zp_emit_log(ctx, ZP_LOG_ERROR, ZP_ERR_POOL_FULL, count);
         return 0xFFFF;
     }
 
@@ -56,7 +64,6 @@ poolref_t zp_pool_push(
 
     if (total_slot > zp_pool_avail(ctx)) {
         ZP_UNLOCK(ctx, ZP_LOCK_POOL);
-        zp_emit_log(ctx, ZP_LOG_ERROR, ZP_ERR_POOL_FULL, (uint16_t)total_slot);
         return 0xFFFF;
     }
 
@@ -77,38 +84,39 @@ poolref_t zp_pool_push(
     return ref;
 }
 
-bool zp_pool_edit(
-    zp_ctx_t* ctx, poolref_t ref, uint8_t type_id, const void* data, uint16_t count
+zp_status_t zp_pool_edit(
+    zp_ctx_t* ctx,
+    poolref_t ref,
+    uint8_t type_id,
+    const void* data,
+    uint16_t count
 ) {
     if (!ctx || !ctx->pool_buf || !ctx->schema || !data || count == 0 ||
         ctx->pool_cap == 0) {
-        return false;
+        return ZP_INVALID_ACTION;
     }
 
     ZP_LOCK(ctx, ZP_LOCK_POOL);
 
     if (!zp_pool_is_valid(ctx, ref)) {
         ZP_UNLOCK(ctx, ZP_LOCK_POOL);
-        return false;
+        return ZP_INVALID_ACTION;
     }
 
     zp_pool_slot_t* slot = zp_pool_slot(ctx, ref);
     if (slot->flags & ZP_POOL_FLAG_READONLY) {
         ZP_UNLOCK(ctx, ZP_LOCK_POOL);
-        zp_emit_log(ctx, ZP_LOG_ERROR, ZP_ERR_POOL_READONLY, ref);
-        return false;
+        return ZP_POOL_READONLY;
     }
     if (type_id != slot->type_id) {
         ZP_UNLOCK(ctx, ZP_LOCK_POOL);
-        zp_emit_log(ctx, ZP_LOG_ERROR, ZP_ERR_POOL_TYPE_MISMATCH, ref);
-        return false;
+        return ZP_POOL_TYPE_MISMATCH;
     }
 
     size_t type_size = zp_get_type_size(ctx->schema, type_id);
     if (type_size == 0 || (size_t)count > (size_t)slot->cap / type_size) {
         ZP_UNLOCK(ctx, ZP_LOCK_POOL);
-        zp_emit_log(ctx, ZP_LOG_ERROR, ZP_ERR_POOL_SLOT_EXCEEDED, count);
-        return false;
+        return ZP_POOL_SLOT_EXCEEDED;
     }
 
     size_t data_len = type_size * (size_t)count;
@@ -117,7 +125,7 @@ bool zp_pool_edit(
     zp_memcpy(ctx->pool_buf + ref + sizeof(zp_pool_slot_t), data, data_len);
     ZP_UNLOCK(ctx, ZP_LOCK_POOL);
 
-    return true;
+    return ZP_OK;
 }
 
 void zp_pool_reset(zp_ctx_t* ctx) {

@@ -24,6 +24,11 @@ typedef struct {
 
 typedef struct zp_ctx_s zp_ctx_t;
 
+#ifndef zp_container_of
+#define zp_container_of(ptr, type, member) \
+    ((type*)((char*)(ptr) - offsetof(type, member)))
+#endif
+
 #define ZP_PRIMITIVES(X) \
     X(u8) X(u16) X(u32) X(u64) \
     X(s8) X(s16) X(s32) X(s64) \

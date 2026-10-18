@@ -3,6 +3,7 @@
 
 #include "zeropack.h"
 #include "zeropack/core.h"
+#include "zeropack/types.h"
 
 // -----------------------------------------------------------------------------
 // Schema Definition (Compile-time macros, no external codegen required)
@@ -15,9 +16,9 @@
 
 #define APP_TYPES(X) X(SensorReport, SENSOR_REPORT_FIELDS)
 
-#define APP_ACTIONS(V, T, A)                    \
-    V(ACTION_PING, "WIRE_PING")                 \
-    V(ACTION_PONG)                              \
+#define APP_ACTIONS(V, T, A)    \
+    V(ACTION_PING, "WIRE_PING") \
+    V(ACTION_PONG)              \
     T(ACTION_REPORT, SensorReport, "WIRE_REPORT")
 
 ZP_DECLARE(APP_TYPES, APP_ACTIONS)
@@ -29,12 +30,13 @@ ZP_GENERATE_SCHEMA(example_schema, APP_TYPES, APP_ACTIONS)
 // Simulated Loopback Transport (Writes directly into ZeroPack's leased rx
 // buffer)
 // -----------------------------------------------------------------------------
-static zp_ctx_t s_ctx;
 static size_t s_pending_rx_len = 0;
 
-static zp_ssize_t loopback_writev(const zp_iovec_t* iov, int iovcnt) {
-    uint8_t* rx_buf = zp_rx_buf(&s_ctx);
-    size_t avail = zp_rx_avail(&s_ctx);
+static zp_ssize_t loopback_writev(
+    zp_ctx_t* ctx, const zp_iovec_t* iov, int iovcnt
+) {
+    uint8_t* rx_buf = zp_rx_buf(ctx);
+    size_t avail = zp_rx_avail(ctx);
 
     zp_ssize_t written = 0;
     for (int i = 0; i < iovcnt; i++) {
@@ -88,20 +90,21 @@ int main(void) {
     zp_on_action(example_schema, ACTION_PING, on_ping);
     zp_on_action(example_schema, ACTION_REPORT, on_report);
 
+    zp_ctx_t ctx;
     zp_init(
-        &s_ctx,
+        &ctx,
         &(zp_config_t){
             .schema = &example_schema,
             .writev = loopback_writev,
-            ZP_SLICE(rx, s_rx),
-            ZP_SLICE(pool, s_pool),
+            ZP_BUFFER(rx, s_rx),
+            ZP_BUFFER(pool, s_pool),
         }
     );
 
     // Emit a void action (no payload)
     printf("\n[Step 1] Emitting ACTION_PING...");
-    zp_emit(&s_ctx, ACTION_PING);
-    flush_bus_to_receiver(&s_ctx, "ACTION_PING");
+    zp_emit(&ctx, ACTION_PING);
+    flush_bus_to_receiver(&ctx, "ACTION_PING");
 
     // Emit a structured action
     SensorReport sample = {
@@ -110,12 +113,12 @@ int main(void) {
         .timestamp = 42000,
     };
     printf("\n[Step 2] Emitting ACTION_REPORT (SensorReport payload)...");
-    zp_emit(&s_ctx, ACTION_REPORT, &sample);
-    flush_bus_to_receiver(&s_ctx, "ACTION_REPORT");
+    zp_emit(&ctx, ACTION_REPORT, &sample);
+    flush_bus_to_receiver(&ctx, "ACTION_REPORT");
 
     // Send binary handshake schema
     printf("\n[Step 3] Emitting self-describing binary handshake...\n");
-    zp_send_handshake(&s_ctx);
+    zp_send_handshake(&ctx);
     printf(
         "  Handshake binary size: %zu bytes (contains complete schema & field "
         "definitions)\n",

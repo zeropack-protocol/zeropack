@@ -21,29 +21,32 @@ typedef struct __attribute__((packed)) {
 
 // Acciones internas
 #define ZP_SYS_ACTION_START 0xF0
-#define ZP_SYS_ACTION_LOG 0xFC
+#define ZP_SYS_ACTION_LOG 0xF1
+
 #define ZP_SYS_ACTION_POOL_EDIT 0xFD
 #define ZP_SYS_ACTION_POOL_STORE 0xFE
 #define ZP_SYS_ACTION_POOL_RESET 0xFF
 
 typedef enum {
+    ZP_LOG_OK = 0,
     ZP_LOG_WARN = 1,
     ZP_LOG_ERROR = 2,
 } zp_log_level_t;
 
 typedef enum {
-    ZP_ERR_NONE = 0,
-    ZP_ERR_BUFFER_OVERFLOW,
-    ZP_ERR_INVALID_ACTION,
-    ZP_ERR_NO_HOOK,
-    ZP_ERR_POOL_FULL,
-    ZP_ERR_POOL_READONLY,
-    ZP_ERR_POOL_TYPE_MISMATCH,
-    ZP_ERR_POOL_SLOT_EXCEEDED,
-    ZP_ERR_UNKNOWN_INTERNAL_ACTION,
-} zp_log_code_t;
+    ZP_OK = 0,
+    ZP_BUFFER_OVERFLOW,
+    ZP_INVALID_ACTION,
+    ZP_NO_HOOK,
+    ZP_POOL_FULL,
+    ZP_POOL_READONLY,
+    ZP_POOL_SLOT_STORED,
+    ZP_POOL_TYPE_MISMATCH,
+    ZP_POOL_SLOT_EXCEEDED,
+    ZP_UNKNOWN_INTERNAL_ACTION,
+} zp_status_t;
 
-typedef struct __attribute__((packed)) {
+typedef struct {
     uint8_t level;
     uint8_t code;
     uint16_t extra;

@@ -5,11 +5,12 @@
 
 #include "zeropack/config.h"
 #include "zeropack/pool.h"
+#include "zeropack/protocol.h"
 #include "zeropack/schema.h"
 #include "zeropack/types.h"
 
 void zp_emit_log(
-    zp_ctx_t* ctx, zp_log_level_t level, zp_log_code_t code, uint16_t extra
+    zp_ctx_t* ctx, zp_log_level_t level, zp_status_t code, uint16_t extra
 ) {
     zp_log_msg_t msg = {
         .level = (uint8_t)level,
@@ -32,7 +33,7 @@ static void zp_send_pair(
         {.buf = hdr, .len = hdr_len},
         {.buf = data, .len = data_len},
     };
-    ctx->writev(iov, (data && data_len > 0) ? 2 : 1);
+    ctx->writev(ctx, iov, (data && data_len > 0) ? 2 : 1);
 }
 
 void zp_send_handshake(zp_ctx_t* ctx) {
@@ -91,9 +92,7 @@ void zp_send_handshake(zp_ctx_t* ctx) {
 
     for (uint8_t i = 0; i < ctx->schema->action_count; i++) {
         const zp_action_meta_t* a = &ctx->schema->actions[i];
-        uint8_t a_hdr[2] = {
-            zp_get_action_type_id(ctx->schema, i), a->is_array
-        };
+        uint8_t a_hdr[2] = {zp_get_action_type_id(ctx->schema, i), a->is_array};
 
         zp_send_pair(
             ctx, a_hdr, sizeof(a_hdr), a->name, zp_strlen(a->name) + 1
@@ -115,7 +114,7 @@ void zp_send_handshake(zp_ctx_t* ctx) {
         } p_hdr = {(poolref_t)offset, slot->type_id, slot->count};
 
         zp_send_pair(
-            ctx, &p_hdr, sizeof(p_hdr), zp_pool_get(ctx, offset), data_len
+            ctx, &p_hdr, sizeof(p_hdr), _zp_pool_get(ctx, offset), data_len
         );
 
         offset += total_slot;
@@ -130,32 +129,34 @@ static void handle_internal(
         case ZP_SYS_ACTION_POOL_EDIT: {
             const poolref_t ref = *(const poolref_t*)payload;
             const void* data = payload + sizeof(poolref_t);
-            zp_pool_edit(ctx, ref, hdr->type_id, data, hdr->count);
+            zp_status_t status =
+                zp_pool_edit(ctx, ref, hdr->type_id, data, hdr->count);
+
+            if (status != ZP_OK) {
+                zp_emit_log(ctx, ZP_LOG_ERROR, status, ref);
+            }
             break;
         }
         case ZP_SYS_ACTION_POOL_STORE: {
             poolref_t ref =
                 zp_pool_push(ctx, hdr->type_id, payload, hdr->count);
 
-            zp_send_raw(
-                ctx,
-                ZP_SYS_ACTION_POOL_STORE,
-                TYPE_ID_poolref_t,
-                1,
-                &ref,
-                sizeof(poolref_t)
-            );
+            if (ref == 0xFFFF) {
+                zp_emit_log(ctx, ZP_LOG_ERROR, ZP_POOL_FULL, ctx->pool_len);
+                break;
+            }
+
+            zp_emit_log(ctx, ZP_LOG_OK, ZP_POOL_SLOT_STORED, ref);
             break;
         }
         case ZP_SYS_ACTION_POOL_RESET:
             zp_pool_reset(ctx);
-            zp_send_raw(
-                ctx, ZP_SYS_ACTION_POOL_RESET, TYPE_ID_NONE, 0, NULL, 0
-            );
+            break;
+        case ZP_SYS_ACTION_LOG:
             break;
         default:
             zp_emit_log(
-                ctx, ZP_LOG_WARN, ZP_ERR_UNKNOWN_INTERNAL_ACTION, hdr->action
+                ctx, ZP_LOG_WARN, ZP_UNKNOWN_INTERNAL_ACTION, hdr->action
             );
             break;
     }
@@ -166,10 +167,7 @@ void zp_rx_commit(zp_ctx_t* ctx, size_t len) {
 
     if (len > ctx->rx_cap - ctx->rx_len) {
         zp_emit_log(
-            ctx,
-            ZP_LOG_ERROR,
-            ZP_ERR_BUFFER_OVERFLOW,
-            (uint16_t)(ctx->rx_len + len)
+            ctx, ZP_LOG_ERROR, ZP_BUFFER_OVERFLOW, (uint16_t)(ctx->rx_len + len)
         );
         ctx->rx_len = 0;
         return;
@@ -191,8 +189,7 @@ void zp_rx_commit(zp_ctx_t* ctx, size_t len) {
                 zp_emit_log(
                     ctx,
                     ZP_LOG_ERROR,
-                    type_size == 0 ? ZP_ERR_POOL_TYPE_MISMATCH
-                                   : ZP_ERR_BUFFER_OVERFLOW,
+                    type_size == 0 ? ZP_POOL_TYPE_MISMATCH : ZP_BUFFER_OVERFLOW,
                     hdr->action
                 );
                 ctx->rx_len = 0;
@@ -204,27 +201,21 @@ void zp_rx_commit(zp_ctx_t* ctx, size_t len) {
             if ((hdr->action == ZP_SYS_ACTION_POOL_STORE &&
                  (type_size == 0 || hdr->count == 0)) ||
                 (hdr->count > 0 && type_size == 0)) {
-                zp_emit_log(
-                    ctx, ZP_LOG_WARN, ZP_ERR_INVALID_ACTION, hdr->action
-                );
+                zp_emit_log(ctx, ZP_LOG_WARN, ZP_INVALID_ACTION, hdr->action);
                 ctx->rx_len = 0;
                 break;
             }
             if (type_size > 0 &&
                 (size_t)hdr->count >
                     (ctx->rx_cap - sizeof(zp_header_t)) / type_size) {
-                zp_emit_log(
-                    ctx, ZP_LOG_ERROR, ZP_ERR_BUFFER_OVERFLOW, hdr->count
-                );
+                zp_emit_log(ctx, ZP_LOG_ERROR, ZP_BUFFER_OVERFLOW, hdr->count);
                 ctx->rx_len = 0;
                 break;
             }
             payload_len = type_size * (size_t)hdr->count;
         } else {
             if (hdr->action >= ctx->schema->action_count) {
-                zp_emit_log(
-                    ctx, ZP_LOG_WARN, ZP_ERR_INVALID_ACTION, hdr->action
-                );
+                zp_emit_log(ctx, ZP_LOG_WARN, ZP_INVALID_ACTION, hdr->action);
                 ctx->rx_len = 0;
                 break;
             }
@@ -232,15 +223,12 @@ void zp_rx_commit(zp_ctx_t* ctx, size_t len) {
             const zp_action_meta_t* act = &ctx->schema->actions[hdr->action];
             uint8_t expected_type =
                 zp_get_action_type_id(ctx->schema, hdr->action);
-            bool valid_count =
-                !act->type
-                    ? (hdr->count == 0)
-                    : (act->is_array ? (hdr->count >= 1) : (hdr->count == 1));
+            bool valid_count = !act->type ? (hdr->count == 0)
+                                          : (act->is_array ? (hdr->count >= 1)
+                                                           : (hdr->count == 1));
 
             if (hdr->type_id != expected_type || !valid_count) {
-                zp_emit_log(
-                    ctx, ZP_LOG_WARN, ZP_ERR_INVALID_ACTION, hdr->action
-                );
+                zp_emit_log(ctx, ZP_LOG_WARN, ZP_INVALID_ACTION, hdr->action);
                 ctx->rx_len = 0;
                 break;
             }
@@ -249,9 +237,7 @@ void zp_rx_commit(zp_ctx_t* ctx, size_t len) {
             if (elem_size > 0 &&
                 (size_t)hdr->count >
                     (ctx->rx_cap - sizeof(zp_header_t)) / elem_size) {
-                zp_emit_log(
-                    ctx, ZP_LOG_ERROR, ZP_ERR_BUFFER_OVERFLOW, hdr->count
-                );
+                zp_emit_log(ctx, ZP_LOG_ERROR, ZP_BUFFER_OVERFLOW, hdr->count);
                 ctx->rx_len = 0;
                 break;
             }
@@ -263,12 +249,19 @@ void zp_rx_commit(zp_ctx_t* ctx, size_t len) {
 
         if (ctx->rx_len < total_packet_len) break;
 
-        const uint8_t* payload = ctx->rx_buf + sizeof(zp_header_t);
+        uint8_t* payload = ctx->rx_buf + sizeof(zp_header_t);
+
+        // normalize bool values to 0 or 1
+        if (hdr->type_id == TYPE_ID_bool) {
+            for (uint16_t i = 0; i < hdr->count; i++) {
+                payload[i] = (payload[i] != 0);
+            }
+        }
 
         if (hdr->action >= ZP_SYS_ACTION_START) {
             handle_internal(ctx, hdr, payload);
         } else if (!ctx->dispatch(ctx, hdr, payload)) {
-            zp_emit_log(ctx, ZP_LOG_WARN, ZP_ERR_NO_HOOK, hdr->action);
+            zp_emit_log(ctx, ZP_LOG_WARN, ZP_NO_HOOK, hdr->action);
         }
 
         size_t remaining = ctx->rx_len - total_packet_len;
@@ -340,7 +333,7 @@ zp_ssize_t zp_send_raw(
     int iovcnt = (payload != NULL && size > 0) ? 2 : 1;
 
     ZP_LOCK(ctx, ZP_LOCK_TX);
-    zp_ssize_t ret = ctx->writev(iov, iovcnt);
+    zp_ssize_t ret = ctx->writev(ctx, iov, iovcnt);
     ZP_UNLOCK(ctx, ZP_LOCK_TX);
     return ret;
 }

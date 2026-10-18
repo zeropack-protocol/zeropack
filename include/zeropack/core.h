@@ -4,19 +4,20 @@
 #include <stdint.h>
 
 #include "zeropack/action.h"
+#include "zeropack/protocol.h"
 #include "zeropack/schema.h"
 #include "zeropack/types.h"
 
-#define ZP_SLICE(n, s) .n##_buf = (s), .n##_cap = sizeof(s)
+#define ZP_BUFFER(n, s) .n##_buf = (s), .n##_cap = sizeof(s)
 
-#define ZP_LOCK(ctx, target)                                     \
-    do {                                                         \
-        if ((ctx)->lock) (ctx)->lock(target, (ctx)->userdata);   \
+#define ZP_LOCK(ctx, target)                                   \
+    do {                                                       \
+        if ((ctx)->lock) (ctx)->lock((ctx), (target));         \
     } while (0)
 
-#define ZP_UNLOCK(ctx, target)                                       \
-    do {                                                             \
-        if ((ctx)->unlock) (ctx)->unlock(target, (ctx)->userdata);   \
+#define ZP_UNLOCK(ctx, target)                                 \
+    do {                                                       \
+        if ((ctx)->unlock) (ctx)->unlock((ctx), (target));     \
     } while (0)
 
 typedef enum {
@@ -24,8 +25,10 @@ typedef enum {
     ZP_LOCK_POOL = 1,
 } zp_lock_target_t;
 
-typedef void (*zp_lock_fn_t)(zp_lock_target_t target, void* userdata);
-typedef zp_ssize_t (*zp_writev_fn_t)(const zp_iovec_t* iov, int iovcnt);
+typedef void (*zp_lock_fn_t)(zp_ctx_t* ctx, zp_lock_target_t target);
+typedef zp_ssize_t (*zp_writev_fn_t)(
+    zp_ctx_t* ctx, const zp_iovec_t* iov, int iovcnt
+);
 
 struct zp_ctx_s {
     const zp_schema_t* schema;
@@ -80,5 +83,5 @@ zp_ssize_t zp_send_raw(
 void zp_send_handshake(zp_ctx_t* ctx);
 void zp_rx_commit(zp_ctx_t* ctx, size_t len);
 void zp_emit_log(
-    zp_ctx_t* ctx, zp_log_level_t level, zp_log_code_t code, uint16_t extra
+    zp_ctx_t* ctx, zp_log_level_t level, zp_status_t code, uint16_t extra
 );
