@@ -6,11 +6,6 @@
 #include <stddef.h>
 
 #include "zeropack.h"
-#include "zeropack/core.h"
-#include "zeropack/pool.h"
-#include "zeropack/protocol.h"
-#include "zeropack/schema.h"
-#include "zeropack/types.h"
 
 // =============================================================================
 // Minimalist Test Harness
@@ -145,17 +140,15 @@ static void test_setup(void) {
     memset(s_pool_buf, 0, sizeof(s_pool_buf));
     memset(s_tx_capture, 0, sizeof(s_tx_capture));
 
-    zp_init(
-        &s_ctx,
-        &(zp_config_t){
-            .schema = &test_schema,
-            .writev = test_writev,
-            .lock = test_lock,
-            .unlock = test_unlock,
-            ZP_BUFFER(rx, s_rx_buf),
-            ZP_BUFFER(pool, s_pool_buf),
-        }
-    );
+    s_ctx = (zp_ctx_t){
+        .schema = &test_schema,
+        .writev = test_writev,
+        .lock = test_lock,
+        .unlock = test_unlock,
+        ZP_BUFFER(rx, s_rx_buf),
+        ZP_BUFFER(pool, s_pool_buf),
+    };
+    zp_init(&s_ctx);
 }
 
 // =============================================================================
@@ -355,8 +348,8 @@ static bool test_rx_pipeline_and_dispatch(void) {
     s_ping_handled = false;
     memset(&s_sensor_received, 0, sizeof(s_sensor_received));
 
-    zp_on_action(test_schema, ACTION_PING, on_test_ping);
-    zp_on_action(test_schema, ACTION_UPDATE_DATA, on_test_sensor);
+    ZP_SUBSCRIBE(test_schema, ACTION_PING, on_test_ping);
+    ZP_SUBSCRIBE(test_schema, ACTION_UPDATE_DATA, on_test_sensor);
 
     // 1. Dispatch void action
     zp_header_t ping_hdr = {
@@ -395,7 +388,7 @@ static bool test_rx_pipeline_and_dispatch(void) {
 static bool test_rx_fragmentation(void) {
     test_setup();
     memset(&s_sensor_received, 0, sizeof(s_sensor_received));
-    zp_on_action(test_schema, ACTION_UPDATE_DATA, on_test_sensor);
+    ZP_SUBSCRIBE(test_schema, ACTION_UPDATE_DATA, on_test_sensor);
 
     sensor_t tx_sensor = {
         .sensor_id = 1234,
@@ -435,7 +428,7 @@ static bool test_rx_fragmentation(void) {
 static bool test_boolean_normalization(void) {
     test_setup();
     memset(&s_sensor_received, 0, sizeof(s_sensor_received));
-    zp_on_action(test_schema, ACTION_UPDATE_DATA, on_test_sensor);
+    ZP_SUBSCRIBE(test_schema, ACTION_UPDATE_DATA, on_test_sensor);
 
     // Set non-standard boolean value (e.g. 0x42 instead of 0 or 1)
     sensor_t tx_sensor = {
@@ -467,18 +460,52 @@ static bool test_boolean_normalization(void) {
 static bool test_internal_pool_sys_actions(void) {
     test_setup();
 
-    // 1. Store value in pool
-    sensor_t s = {.sensor_id = 55};
-    zp_pool_push_val(&s_ctx, sensor_t, s);
-    ASSERT_EQ(true, s_ctx.pool_len > 0);
+    // 1. Store boolean value in pool via wire SYS_ACTION_POOL_STORE
+    uint8_t raw_bool = 0x55;
+    zp_header_t store_hdr = {
+        .action = ZP_SYS_ACTION_POOL_STORE,
+        .type_id = TYPE_ID_bool,
+        .count = 1,
+    };
+    uint8_t* buf = zp_rx_buf(&s_ctx);
+    memcpy(buf, &store_hdr, sizeof(store_hdr));
+    memcpy(buf + sizeof(store_hdr), &raw_bool, sizeof(raw_bool));
+    zp_rx_commit(&s_ctx, sizeof(store_hdr) + sizeof(raw_bool));
 
-    // 2. Receive internal POOL_RESET packet (wire action 0xFFFD)
+    ASSERT_EQ(true, s_ctx.pool_len > 0);
+    bool* b_val = zp_pool_get_typed(&s_ctx, bool, 0);
+    ASSERT_NOT_NULL(b_val);
+    ASSERT_EQ(true, *b_val);
+
+    // 2. Edit boolean value in pool via wire SYS_ACTION_POOL_EDIT (ref = 0, new_val = 0)
+    struct __attribute__((packed)) {
+        zp_header_t hdr;
+        poolref_t ref;
+        uint8_t val;
+    } edit_pkt = {
+        .hdr = {
+            .action = ZP_SYS_ACTION_POOL_EDIT,
+            .type_id = TYPE_ID_bool,
+            .count = 1,
+        },
+        .ref = 0,
+        .val = 0x00,
+    };
+    buf = zp_rx_buf(&s_ctx);
+    memcpy(buf, &edit_pkt, sizeof(edit_pkt));
+    zp_rx_commit(&s_ctx, sizeof(edit_pkt));
+
+    b_val = zp_pool_get_typed(&s_ctx, bool, 0);
+    ASSERT_NOT_NULL(b_val);
+    ASSERT_EQ(false, *b_val);
+
+    // 3. Receive internal POOL_RESET packet
     zp_header_t reset_hdr = {
         .action = ZP_SYS_ACTION_POOL_RESET,
         .type_id = TYPE_ID_NONE,
         .count = 0,
     };
-    uint8_t* buf = zp_rx_buf(&s_ctx);
+    buf = zp_rx_buf(&s_ctx);
     memcpy(buf, &reset_hdr, sizeof(reset_hdr));
     zp_rx_commit(&s_ctx, sizeof(reset_hdr));
 
@@ -516,6 +543,29 @@ static bool test_lock_callbacks(void) {
     return true;
 }
 
+static bool test_uninitialized_guard(void) {
+    zp_ctx_t uninit_ctx = {
+        .schema = &test_schema,
+        .writev = test_writev,
+        ZP_BUFFER(rx, s_rx_buf),
+        ZP_BUFFER(pool, s_pool_buf),
+    };
+    // Notice: zp_init(&uninit_ctx) is deliberately NOT called!
+    ASSERT_EQ(ZP_STATE_UNINITIALIZED, uninit_ctx.state);
+
+    // Any operation must be safely rejected without crashing or UB
+    ASSERT_EQ(-1, zp_send_raw(&uninit_ctx, 1, 1, 0, NULL, 0));
+    ASSERT_EQ(0xFFFF, zp_pool_push(&uninit_ctx, TYPE_ID_u8, "test", 4));
+    ASSERT_EQ(ZP_INVALID_ACTION, zp_pool_edit(&uninit_ctx, 0, TYPE_ID_u8, "test", 4));
+    ASSERT_EQ(false, zp_pool_is_valid(&uninit_ctx, 0));
+
+    // Calling zp_init activates the context
+    ASSERT_EQ(0, zp_init(&uninit_ctx));
+    ASSERT_EQ(true, (uninit_ctx.state & ZP_STATE_INITIALIZED) != 0);
+
+    return true;
+}
+
 // =============================================================================
 // Main Runner
 // =============================================================================
@@ -534,6 +584,7 @@ int main(void) {
     RUN_TEST(test_boolean_normalization);
     RUN_TEST(test_internal_pool_sys_actions);
     RUN_TEST(test_lock_callbacks);
+    RUN_TEST(test_uninitialized_guard);
 
     TEST_SUITE_END();
 }

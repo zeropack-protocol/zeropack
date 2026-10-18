@@ -1,11 +1,7 @@
-#include "zeropack/types.h"
+#include "zeropack.h"
 
-#include <stdint.h>
-
-#include "zeropack/schema.h"
-
-#define ZP_DEF_PRIM_META(p)                                           \
-    const zp_type_meta_t __zp_meta_##p = {                            \
+#define ZP_DEF_PRIM_META(p)                                                 \
+    const zp_type_meta_t __zp_meta_##p = {                                  \
         .name = #p, .fields = NULL, .size = sizeof(p), .count = TYPE_ID_##p \
     };
 ZP_PRIMITIVES(ZP_DEF_PRIM_META)

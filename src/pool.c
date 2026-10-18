@@ -1,14 +1,8 @@
-#include "zeropack/pool.h"
-
-#include <stdint.h>
-
-#include "zeropack/config.h"
-#include "zeropack/core.h"
-#include "zeropack/protocol.h"
-#include "zeropack/types.h"
+#include "zeropack.h"
 
 bool zp_pool_is_valid(const zp_ctx_t* ctx, poolref_t ref) {
-    if (!ctx || !ctx->pool_buf || !ctx->schema) return false;
+    if (!ctx || !(ctx->state & ZP_STATE_INITIALIZED) || !ctx->pool_buf)
+        return false;
     if ((ref & 7) != 0) return false;
 
     size_t offset = 0;
@@ -44,8 +38,8 @@ void* zp_pool_get_checked(
 poolref_t zp_pool_push(
     zp_ctx_t* ctx, uint8_t type_id, const void* data, uint16_t count
 ) {
-    if (!ctx || !ctx->pool_buf || !ctx->schema || !data || count == 0 ||
-        ctx->pool_cap == 0) {
+    if (!ctx || !(ctx->state & ZP_STATE_INITIALIZED) || !ctx->pool_buf ||
+        ctx->pool_cap == 0 || !data || count == 0) {
         return 0xFFFF;
     }
 
@@ -91,8 +85,8 @@ zp_status_t zp_pool_edit(
     const void* data,
     uint16_t count
 ) {
-    if (!ctx || !ctx->pool_buf || !ctx->schema || !data || count == 0 ||
-        ctx->pool_cap == 0) {
+    if (!ctx || !(ctx->state & ZP_STATE_INITIALIZED) || !ctx->pool_buf ||
+        ctx->pool_cap == 0 || !data || count == 0) {
         return ZP_INVALID_ACTION;
     }
 
@@ -129,7 +123,7 @@ zp_status_t zp_pool_edit(
 }
 
 void zp_pool_reset(zp_ctx_t* ctx) {
-    if (!ctx) return;
+    if (!ctx || !(ctx->state & ZP_STATE_INITIALIZED)) return;
     ZP_LOCK(ctx, ZP_LOCK_POOL);
     ctx->pool_len = 0;
     ZP_UNLOCK(ctx, ZP_LOCK_POOL);

@@ -2,8 +2,6 @@
 #include <string.h>
 
 #include "zeropack.h"
-#include "zeropack/core.h"
-#include "zeropack/types.h"
 
 // -----------------------------------------------------------------------------
 // Schema Definition (Compile-time macros, no external codegen required)
@@ -87,19 +85,16 @@ int main(void) {
     printf("=== ZeroPack Protocol Minimal Loopback Example ===\n");
 
     // Register event callbacks
-    zp_on_action(example_schema, ACTION_PING, on_ping);
-    zp_on_action(example_schema, ACTION_REPORT, on_report);
+    ZP_SUBSCRIBE(example_schema, ACTION_PING, on_ping);
+    ZP_SUBSCRIBE(example_schema, ACTION_REPORT, on_report);
 
-    zp_ctx_t ctx;
-    zp_init(
-        &ctx,
-        &(zp_config_t){
-            .schema = &example_schema,
-            .writev = loopback_writev,
-            ZP_BUFFER(rx, s_rx),
-            ZP_BUFFER(pool, s_pool),
-        }
-    );
+    zp_ctx_t ctx = {
+        .schema = &example_schema,
+        .writev = loopback_writev,
+        ZP_BUFFER(rx, s_rx),
+        ZP_BUFFER(pool, s_pool),
+    };
+    zp_init(&ctx);
 
     // Emit a void action (no payload)
     printf("\n[Step 1] Emitting ACTION_PING...");

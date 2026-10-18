@@ -2,7 +2,8 @@ CC ?= clang
 AR ?= ar
 CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -O2 -Iinclude
 
-SRCS = src/core.c src/pool.c src/types.c
+SRCS = src/core.c src/tx.c src/rx.c src/handshake.c src/pool.c src/types.c
+
 OBJS = $(patsubst src/%.c, build/%.o, $(SRCS))
 LIB  = build/libzeropack.a
 

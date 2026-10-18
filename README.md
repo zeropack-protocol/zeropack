@@ -127,13 +127,13 @@ ZeroPack performs zero dynamic heap allocations. Memory buffers are provided dir
 static uint8_t s_rx_buf[1024] __attribute__((aligned(8)));
 static uint8_t s_pool_buf[1024] __attribute__((aligned(8)));
 
-zp_ctx_t ctx;
-zp_init(&ctx, &(zp_config_t){
+zp_ctx_t ctx = {
     .schema = &app_schema,
     .writev = my_uart_writev,
     ZP_BUFFER(rx, s_rx_buf),
     ZP_BUFFER(pool, s_pool_buf),
-});
+};
+zp_init(&ctx);
 ```
 
 ### 4. Register Event Callbacks & Emit Actions
@@ -147,7 +147,7 @@ static void on_report(zp_ctx_t* ctx, const SensorReport* report) {
 
 int main(void) {
     // Register callback for incoming ACTION_REPORT events
-    zp_on_action(app_schema, ACTION_REPORT, on_report);
+    ZP_SUBSCRIBE(app_schema, ACTION_REPORT, on_report);
 
     // Emit an event over the wire
     SensorReport data = {
