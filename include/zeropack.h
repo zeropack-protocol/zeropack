@@ -38,11 +38,6 @@ enum {
 #undef _ZP_GEN_PRIM_TYPE_ID
 #define TYPE_ID__Bool TYPE_ID_bool
 
-#ifndef zp_container_of
-#define zp_container_of(ptr, type, member) \
-    ((type*)((char*)(ptr) - offsetof(type, member)))
-#endif
-
 // Wire format =================================================================
 typedef struct __attribute__((packed)) {
     uint8_t action;
@@ -128,6 +123,7 @@ struct zp_ctx {
     uint8_t* rx_buf;
     uint8_t* pool_buf;
     void* userdata;
+    void* transport;
 
     size_t rx_cap;
     size_t rx_len;
@@ -194,7 +190,6 @@ struct zp_schema {
 };
 
 uint8_t zp_get_meta_id(const zp_schema_t* schema, const zp_type_meta_t* meta);
-uint8_t zp_get_action_type_id(const zp_schema_t* schema, uint8_t action);
 const zp_type_meta_t* zp_get_type_meta(
     const zp_schema_t* schema, uint8_t type_id
 );
@@ -267,7 +262,7 @@ void zp_pool_reset(zp_ctx_t* ctx);
     zp_pool_push((ctx), zp_type_id((ctx)->schema, type), (ptr), (count))
 
 // Core runtime ================================================================
-int zp_init(zp_ctx_t* ctx);
+zp_ctx_t* zp_init(zp_ctx_t* ctx);
 void zp_rx_commit(zp_ctx_t* ctx, size_t len);
 void zp_send_handshake(zp_ctx_t* ctx);
 void zp_emit_log(

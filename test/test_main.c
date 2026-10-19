@@ -1,9 +1,9 @@
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdbool.h>
-#include <stdint.h>
-#include <stddef.h>
 
 #include "zeropack.h"
 
@@ -17,40 +17,46 @@ static int s_tests_failed = 0;
 #define TEST_SUITE_BEGIN() \
     printf("\n=== Running ZeroPack Core Test Suite ===\n\n")
 
-#define TEST_SUITE_END()                                              \
-    do {                                                              \
-        printf("\n========================================\n");        \
-        if (s_tests_failed == 0) {                                    \
-            printf("PASSED (%d/%d tests successful)\n",               \
-                   s_tests_run, s_tests_run);                         \
-        } else {                                                      \
-            printf("FAILED (%d/%d tests failed)\n",                   \
-                   s_tests_failed, s_tests_run);                      \
-        }                                                             \
-        printf("========================================\n");        \
-        return s_tests_failed == 0 ? 0 : 1;                           \
+#define TEST_SUITE_END()                                                      \
+    do {                                                                      \
+        printf("\n========================================\n");               \
+        if (s_tests_failed == 0) {                                            \
+            printf(                                                           \
+                "PASSED (%d/%d tests successful)\n", s_tests_run, s_tests_run \
+            );                                                                \
+        } else {                                                              \
+            printf(                                                           \
+                "FAILED (%d/%d tests failed)\n", s_tests_failed, s_tests_run  \
+            );                                                                \
+        }                                                                     \
+        printf("========================================\n");                 \
+        return s_tests_failed == 0 ? 0 : 1;                                   \
     } while (0)
 
-#define RUN_TEST(fn)                                                  \
-    do {                                                              \
-        s_tests_run++;                                                \
-        printf("  [RUN]  %s ... ", #fn);                              \
-        bool _ok = fn();                                              \
-        if (_ok) {                                                    \
-            printf("\033[32mOK\033[0m\n");                            \
-        } else {                                                      \
-            s_tests_failed++;                                         \
-            printf("\033[31mFAIL\033[0m\n");                          \
-        }                                                             \
+#define RUN_TEST(fn)                         \
+    do {                                     \
+        s_tests_run++;                       \
+        printf("  [RUN]  %s ... ", #fn);     \
+        bool _ok = fn();                     \
+        if (_ok) {                           \
+            printf("\033[32mOK\033[0m\n");   \
+        } else {                             \
+            s_tests_failed++;                \
+            printf("\033[31mFAIL\033[0m\n"); \
+        }                                    \
     } while (0)
 
-#define ASSERT(expr)                                                  \
-    do {                                                              \
-        if (!(expr)) {                                                \
-            printf("\n    Assert failed at %s:%d: %s\n",              \
-                   __FILE__, __LINE__, #expr);                        \
-            return false;                                             \
-        }                                                             \
+#define ASSERT(expr)                                  \
+    do {                                              \
+        if (!(expr)) {                                \
+            printf(                                   \
+                "\n    Assert failed at %s:%d: %s\n", \
+                __FILE__,                             \
+                __LINE__,                             \
+                #expr                                 \
+            );                                        \
+            return false;                             \
+        }                                             \
     } while (0)
 
 #define ASSERT_EQ(a, b) ASSERT((a) == (b))
@@ -67,20 +73,20 @@ static int s_tests_failed = 0;
     F(S, s32, temp_milli)      \
     F(S, bool, is_active)
 
-#define COORD_FIELDS(S, F, A)  \
-    F(S, f32, x)               \
-    F(S, f32, y)               \
+#define COORD_FIELDS(S, F, A) \
+    F(S, f32, x)              \
+    F(S, f32, y)              \
     F(S, f32, z)
 
 #define TEST_TYPES(X)          \
     X(sensor_t, SENSOR_FIELDS) \
     X(coord_t, COORD_FIELDS)
 
-#define TEST_ACTIONS(V, T, A)               \
-    V(ACTION_PING, "WIRE_PING")             \
-    V(ACTION_RESET_DEV)                     \
-    T(ACTION_UPDATE_DATA, sensor_t)         \
-    T(ACTION_SET_COORD, coord_t)            \
+#define TEST_ACTIONS(V, T, A)       \
+    V(ACTION_PING, "WIRE_PING")     \
+    V(ACTION_RESET_DEV)             \
+    T(ACTION_UPDATE_DATA, sensor_t) \
+    T(ACTION_SET_COORD, coord_t)    \
     A(ACTION_SEND_BUFFER, u8)
 
 ZP_DECLARE(TEST_TYPES, TEST_ACTIONS)
@@ -165,25 +171,21 @@ static bool test_schema_metadata(void) {
     ASSERT_STR_EQ("coord_t", zp_type_name(coord_t));
 
     // Field offsets match ABI
-    ASSERT_EQ(offsetof(sensor_t, sensor_id), zp_type_meta(sensor_t)->fields[0].offset);
-    ASSERT_EQ(offsetof(sensor_t, temp_milli), zp_type_meta(sensor_t)->fields[1].offset);
-    ASSERT_EQ(offsetof(sensor_t, is_active), zp_type_meta(sensor_t)->fields[2].offset);
+    ASSERT_EQ(
+        offsetof(sensor_t, sensor_id), zp_type_meta(sensor_t)->fields[0].offset
+    );
+    ASSERT_EQ(
+        offsetof(sensor_t, temp_milli), zp_type_meta(sensor_t)->fields[1].offset
+    );
+    ASSERT_EQ(
+        offsetof(sensor_t, is_active), zp_type_meta(sensor_t)->fields[2].offset
+    );
 
     // Actions count & wire names
     ASSERT_EQ(5, test_schema.action_count);
     ASSERT_STR_EQ("WIRE_PING", test_schema.actions[0].name);
     ASSERT_STR_EQ("ACTION_RESET_DEV", test_schema.actions[1].name);
     ASSERT_STR_EQ("ACTION_UPDATE_DATA", test_schema.actions[2].name);
-
-    // Test container_of macro
-    struct dummy_transport {
-        int dummy_fd;
-        zp_ctx_t ctx;
-    } transport = {.dummy_fd = 99};
-
-    struct dummy_transport* parent = zp_container_of(&transport.ctx, struct dummy_transport, ctx);
-    ASSERT_EQ(99, parent->dummy_fd);
-    ASSERT_EQ(&transport, parent);
 
     return true;
 }
@@ -303,7 +305,8 @@ static bool test_pool_edit_and_reset(void) {
 
     // Valid edit
     sensor_t s2 = {.sensor_id = 20, .temp_milli = 2000, .is_active = false};
-    zp_status_t st = zp_pool_edit(&s_ctx, ref, zp_type_id(&test_schema, sensor_t), &s2, 1);
+    zp_status_t st =
+        zp_pool_edit(&s_ctx, ref, zp_type_id(&test_schema, sensor_t), &s2, 1);
     ASSERT_EQ(ZP_OK, st);
 
     sensor_t* got = zp_pool_get_typed(&s_ctx, sensor_t, ref);
@@ -437,7 +440,7 @@ static bool test_boolean_normalization(void) {
         .is_active = false,
     };
     uint8_t* raw_bytes = (uint8_t*)&tx_sensor;
-    raw_bytes[offsetof(sensor_t, is_active)] = 0x5A; // dirty non-zero boolean
+    raw_bytes[offsetof(sensor_t, is_active)] = 0x5A;  // dirty non-zero boolean
 
     zp_header_t hdr = {
         .action = ACTION_UPDATE_DATA,
@@ -477,17 +480,19 @@ static bool test_internal_pool_sys_actions(void) {
     ASSERT_NOT_NULL(b_val);
     ASSERT_EQ(true, *b_val);
 
-    // 2. Edit boolean value in pool via wire SYS_ACTION_POOL_EDIT (ref = 0, new_val = 0)
+    // 2. Edit boolean value in pool via wire SYS_ACTION_POOL_EDIT (ref = 0,
+    // new_val = 0)
     struct __attribute__((packed)) {
         zp_header_t hdr;
         poolref_t ref;
         uint8_t val;
     } edit_pkt = {
-        .hdr = {
-            .action = ZP_SYS_ACTION_POOL_EDIT,
-            .type_id = TYPE_ID_bool,
-            .count = 1,
-        },
+        .hdr =
+            {
+                .action = ZP_SYS_ACTION_POOL_EDIT,
+                .type_id = TYPE_ID_bool,
+                .count = 1,
+            },
         .ref = 0,
         .val = 0x00,
     };
@@ -556,11 +561,13 @@ static bool test_uninitialized_guard(void) {
     // Any operation must be safely rejected without crashing or UB
     ASSERT_EQ(-1, zp_send_raw(&uninit_ctx, 1, 1, 0, NULL, 0));
     ASSERT_EQ(0xFFFF, zp_pool_push(&uninit_ctx, TYPE_ID_u8, "test", 4));
-    ASSERT_EQ(ZP_INVALID_ACTION, zp_pool_edit(&uninit_ctx, 0, TYPE_ID_u8, "test", 4));
+    ASSERT_EQ(
+        ZP_INVALID_ACTION, zp_pool_edit(&uninit_ctx, 0, TYPE_ID_u8, "test", 4)
+    );
     ASSERT_EQ(false, zp_pool_is_valid(&uninit_ctx, 0));
 
     // Calling zp_init activates the context
-    ASSERT_EQ(0, zp_init(&uninit_ctx));
+    ASSERT_EQ(&uninit_ctx, zp_init(&uninit_ctx));
     ASSERT_EQ(true, (uninit_ctx.state & ZP_STATE_INITIALIZED) != 0);
 
     return true;

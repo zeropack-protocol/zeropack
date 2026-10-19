@@ -36,7 +36,11 @@ zp_ssize_t zp_send(
     const void* payload,
     size_t size
 ) {
-    uint8_t type_id = zp_get_action_type_id(ctx ? ctx->schema : NULL, action);
+    uint8_t type_id = TYPE_ID_NONE;
+    if (ctx && ctx->schema && action < ctx->schema->action_count) {
+        type_id =
+            zp_get_meta_id(ctx->schema, ctx->schema->actions[action].type);
+    }
     return zp_send_raw(ctx, action, type_id, count, payload, size);
 }
 

@@ -1,10 +1,11 @@
 CC ?= clang
 AR ?= ar
-CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -O2 -Iinclude
+CFLAGS ?= -std=c11 -Wall -Wextra -Wpedantic -O2 -Iinclude -MMD -MP
 
 SRCS = src/core.c src/tx.c src/rx.c src/handshake.c src/pool.c src/types.c
 
 OBJS = $(patsubst src/%.c, build/%.o, $(SRCS))
+DEPS = $(OBJS:.o=.d)
 LIB  = build/libzeropack.a
 
 EXAMPLE_BIN = build/example_minimal
@@ -34,3 +35,5 @@ example: $(LIB)
 
 clean:
 	rm -rf build
+
+-include $(DEPS)

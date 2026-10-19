@@ -43,11 +43,11 @@ static zp_status_t zp_parse_packet_meta(
         if (hdr->action >= ctx->schema->action_count) {
             return ZP_INVALID_ACTION;
         }
-        if (hdr->type_id != zp_get_action_type_id(ctx->schema, hdr->action)) {
-            return ZP_INVALID_ACTION;
-        }
 
         const zp_action_meta_t* act = &ctx->schema->actions[hdr->action];
+        if (hdr->type_id != zp_get_meta_id(ctx->schema, act->type)) {
+            return ZP_INVALID_ACTION;
+        }
         bool valid_count = !act->type ? (hdr->count == 0)
                                       : (act->is_array ? (hdr->count >= 1)
                                                        : (hdr->count == 1));

@@ -70,7 +70,7 @@ void zp_send_handshake(zp_ctx_t* ctx) {
 
     for (uint8_t i = 0; i < ctx->schema->action_count; i++) {
         const zp_action_meta_t* a = &ctx->schema->actions[i];
-        uint8_t a_hdr[2] = {zp_get_action_type_id(ctx->schema, i), a->is_array};
+        uint8_t a_hdr[2] = {zp_get_meta_id(ctx->schema, a->type), a->is_array};
 
         zp_send_pair(
             ctx, a_hdr, sizeof(a_hdr), a->name, zp_strlen(a->name) + 1
