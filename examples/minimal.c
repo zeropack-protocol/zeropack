@@ -54,25 +54,31 @@ static void flush_bus_to_receiver(zp_ctx_t* ctx, const char* label) {
         s_pending_rx_len,
         label
     );
-    // Commit the leased buffer directly into ZeroPack's receiver state machine
-    zp_rx_commit(ctx, s_pending_rx_len);
+    ctx->rx_head += s_pending_rx_len;
     s_pending_rx_len = 0;
-}
 
-// -----------------------------------------------------------------------------
-// Action Handlers (Callbacks)
-// -----------------------------------------------------------------------------
-static void on_ping(zp_ctx_t* ctx) {
-    (void)ctx;
-    printf("  [Callback] Handled ACTION_PING (void action)\n");
-}
-
-static void on_report(zp_ctx_t* ctx, const SensorReport* report) {
-    (void)ctx;
-    printf("  [Callback] Handled ACTION_REPORT:\n");
-    printf("    Temperature : %.2f C\n", (double)report->temperature);
-    printf("    Humidity    : %.2f %%\n", (double)report->humidity);
-    printf("    Timestamp   : %u ms\n", (unsigned int)report->timestamp);
+    zp_msg_t msg;
+    while (zp_poll(ctx, &msg)) {
+        switch (msg.action) {
+            case ACTION_PING:
+                printf("  [Poll] Received ACTION_PING (void action)\n");
+                break;
+            case ACTION_REPORT: {
+                const SensorReport* report = (const SensorReport*)msg.payload;
+                printf("  [Poll] Received ACTION_REPORT:\n");
+                printf(
+                    "    Temperature : %.2f C\n", (double)report->temperature
+                );
+                printf("    Humidity    : %.2f %%\n", (double)report->humidity);
+                printf(
+                    "    Timestamp   : %u ms\n", (unsigned int)report->timestamp
+                );
+                break;
+            }
+            default:
+                break;
+        }
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -83,10 +89,6 @@ static uint8_t s_rx[1024] __attribute__((aligned(8)));
 static uint8_t s_pool[1024] __attribute__((aligned(8)));
 int main(void) {
     printf("=== ZeroPack Protocol Minimal Loopback Example ===\n");
-
-    // Register event callbacks
-    ZP_SUBSCRIBE(example_schema, ACTION_PING, on_ping);
-    ZP_SUBSCRIBE(example_schema, ACTION_REPORT, on_report);
 
     zp_ctx_t ctx = {
         .schema = &example_schema,

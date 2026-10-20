@@ -1,3 +1,5 @@
+#include <stddef.h>
+
 #include "zeropack.h"
 
 typedef struct {
@@ -107,59 +109,83 @@ static void handle_internal(
     }
 }
 
-void zp_rx_commit(zp_ctx_t* ctx, size_t len) {
-    if (!ctx || !(ctx->state & ZP_STATE_INITIALIZED)) return;
-
-    if (len > ctx->rx_cap - ctx->rx_len) {
-        zp_emit_log(
-            ctx, ZP_LOG_ERROR, ZP_BUFFER_OVERFLOW, (uint16_t)(ctx->rx_len + len)
-        );
-        ctx->rx_len = 0;
-        return;
+static inline bool zp_rx_try_compact(zp_ctx_t* ctx, size_t unread) {
+    if (ctx->rx_head == ctx->rx_cap && ctx->rx_tail > 0) {
+        zp_memmove(ctx->rx_buf, ctx->rx_buf + ctx->rx_tail, unread);
+        ctx->rx_head = unread;
+        ctx->rx_tail = 0;
     }
 
-    ctx->rx_len += len;
+    return false;
+}
 
-    while (ctx->rx_len >= sizeof(zp_header_t)) {
-        const zp_header_t* hdr = (const zp_header_t*)ctx->rx_buf;
-        zp_rx_meta_t meta;
-        zp_status_t status = zp_parse_packet_meta(ctx, hdr, &meta);
+bool zp_poll(zp_ctx_t* ctx, zp_msg_t* msg) {
+    if (!ctx || !(ctx->state & ZP_STATE_INITIALIZED)) return false;
 
-        if (status != ZP_OK) {
-            zp_log_level_t level = (status == ZP_BUFFER_OVERFLOW ||
-                                    status == ZP_POOL_TYPE_MISMATCH)
-                                       ? ZP_LOG_ERROR
-                                       : ZP_LOG_WARN;
-            uint16_t extra =
-                (status == ZP_BUFFER_OVERFLOW) ? hdr->count : hdr->action;
-            zp_emit_log(ctx, level, status, extra);
-            ctx->rx_len = 0;
-            break;
-        }
-
-        size_t total_packet_len = sizeof(zp_header_t) + meta.payload_len;
-        if (ctx->rx_len < total_packet_len) break;
-
-        uint8_t* payload = ctx->rx_buf + sizeof(zp_header_t);
-
-        // normalize bool values to 0 or 1
-        if (hdr->type_id == TYPE_ID_bool) {
-            uint8_t* data = payload + meta.data_offset;
-            for (uint16_t i = 0; i < hdr->count; i++) {
-                data[i] = (data[i] != 0);
-            }
-        }
-
-        if (hdr->action >= ZP_SYS_ACTION_START) {
-            handle_internal(ctx, hdr, payload);
-        } else if (!ctx->dispatch(ctx, hdr, payload)) {
-            zp_emit_log(ctx, ZP_LOG_WARN, ZP_NO_HOOK, hdr->action);
-        }
-
-        size_t remaining = ctx->rx_len - total_packet_len;
-        if (remaining > 0) {
-            zp_memmove(ctx->rx_buf, ctx->rx_buf + total_packet_len, remaining);
-        }
-        ctx->rx_len = remaining;
+    size_t unread = ctx->rx_head - ctx->rx_tail;
+    if (unread < sizeof(zp_header_t)) {
+        return zp_rx_try_compact(ctx, unread);
     }
+
+    const zp_header_t* hdr = (const zp_header_t*)(ctx->rx_buf + ctx->rx_tail);
+    zp_rx_meta_t meta;
+    zp_status_t status = zp_parse_packet_meta(ctx, hdr, &meta);
+    if (status != ZP_OK) {
+        zp_log_level_t level =
+            (status == ZP_BUFFER_OVERFLOW || status == ZP_POOL_TYPE_MISMATCH)
+                ? ZP_LOG_ERROR
+                : ZP_LOG_WARN;
+        uint16_t extra =
+            (status == ZP_BUFFER_OVERFLOW) ? hdr->count : hdr->action;
+        zp_emit_log(ctx, level, status, extra);
+
+        // ignore all buffered packets, impossible to recover them
+        ctx->rx_tail = ctx->rx_head;
+        return false;
+    }
+
+    size_t total_packet_len = sizeof(zp_header_t) + meta.payload_len;
+    if (unread < total_packet_len) return zp_rx_try_compact(ctx, unread);
+
+    uint8_t* payload = ctx->rx_buf + ctx->rx_tail + sizeof(zp_header_t);
+
+    // normalize bool values to 0 or 1
+    if (hdr->type_id == TYPE_ID_bool) {
+        uint8_t* data = payload + meta.data_offset;
+        for (uint16_t i = 0; i < hdr->count; i++) {
+            data[i] = (data[i] != 0);
+        }
+    }
+
+    if (hdr->action >= ZP_SYS_ACTION_START) {
+        handle_internal(ctx, hdr, payload);
+        ctx->rx_tail += total_packet_len;
+        return zp_poll(ctx, msg);
+    }
+
+    if (msg) {
+        msg->action = hdr->action;
+        msg->type_id = hdr->type_id;
+        msg->count = hdr->count;
+        msg->payload = (meta.payload_len > 0) ? payload : NULL;
+    }
+
+    ctx->rx_tail += total_packet_len;
+    return true;
+}
+
+size_t zp_rx_avail(zp_ctx_t* ctx) {
+    if (ctx->rx_head == ctx->rx_tail) {
+        ctx->rx_head = 0;
+        ctx->rx_tail = 0;
+    }
+    return ctx->rx_cap - ctx->rx_head;
+}
+
+uint8_t* zp_rx_buf(zp_ctx_t* ctx) {
+    if (ctx->rx_head == ctx->rx_tail) {
+        ctx->rx_head = 0;
+        ctx->rx_tail = 0;
+    }
+    return ctx->rx_buf + ctx->rx_head;
 }

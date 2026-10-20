@@ -334,25 +334,8 @@ static bool test_pool_edit_and_reset(void) {
 // Tests: Core RX & Dispatch Pipeline
 // =============================================================================
 
-static bool s_ping_handled = false;
-static void on_test_ping(zp_ctx_t* ctx) {
-    (void)ctx;
-    s_ping_handled = true;
-}
-
-static sensor_t s_sensor_received = {0};
-static void on_test_sensor(zp_ctx_t* ctx, const sensor_t* data) {
-    (void)ctx;
-    s_sensor_received = *data;
-}
-
 static bool test_rx_pipeline_and_dispatch(void) {
     test_setup();
-    s_ping_handled = false;
-    memset(&s_sensor_received, 0, sizeof(s_sensor_received));
-
-    ZP_SUBSCRIBE(test_schema, ACTION_PING, on_test_ping);
-    ZP_SUBSCRIBE(test_schema, ACTION_UPDATE_DATA, on_test_sensor);
 
     // 1. Dispatch void action
     zp_header_t ping_hdr = {
@@ -362,8 +345,15 @@ static bool test_rx_pipeline_and_dispatch(void) {
     };
     uint8_t* buf = zp_rx_buf(&s_ctx);
     memcpy(buf, &ping_hdr, sizeof(ping_hdr));
-    zp_rx_commit(&s_ctx, sizeof(ping_hdr));
-    ASSERT_EQ(true, s_ping_handled);
+    s_ctx.rx_head += sizeof(ping_hdr);
+
+    zp_msg_t msg;
+    ASSERT(zp_poll(&s_ctx, &msg));
+
+    ASSERT_EQ(msg.action, ACTION_PING);
+    ASSERT_EQ(msg.type_id, TYPE_ID_NONE);
+    ASSERT_EQ(msg.count, 0);
+    ASSERT_EQ(msg.payload, NULL);
 
     // 2. Dispatch structured action
     sensor_t tx_sensor = {
@@ -379,19 +369,24 @@ static bool test_rx_pipeline_and_dispatch(void) {
     buf = zp_rx_buf(&s_ctx);
     memcpy(buf, &sensor_hdr, sizeof(sensor_hdr));
     memcpy(buf + sizeof(sensor_hdr), &tx_sensor, sizeof(tx_sensor));
-    zp_rx_commit(&s_ctx, sizeof(sensor_hdr) + sizeof(tx_sensor));
+    s_ctx.rx_head += sizeof(sensor_hdr) + sizeof(tx_sensor);
 
-    ASSERT_EQ(999, s_sensor_received.sensor_id);
-    ASSERT_EQ(-4000, s_sensor_received.temp_milli);
-    ASSERT_EQ(true, s_sensor_received.is_active);
+    ASSERT(zp_poll(&s_ctx, &msg));
+    ASSERT_EQ(msg.action, ACTION_UPDATE_DATA);
+    ASSERT_EQ(msg.type_id, zp_type_id(&test_schema, sensor_t));
+    ASSERT_EQ(msg.count, 1);
+    ASSERT_NOT_NULL(msg.payload);
+
+    const sensor_t* rx_sensor = (const sensor_t*)msg.payload;
+    ASSERT_EQ(999, rx_sensor->sensor_id);
+    ASSERT_EQ(-4000, rx_sensor->temp_milli);
+    ASSERT_EQ(true, rx_sensor->is_active);
 
     return true;
 }
 
 static bool test_rx_fragmentation(void) {
     test_setup();
-    memset(&s_sensor_received, 0, sizeof(s_sensor_received));
-    ZP_SUBSCRIBE(test_schema, ACTION_UPDATE_DATA, on_test_sensor);
 
     sensor_t tx_sensor = {
         .sensor_id = 1234,
@@ -413,25 +408,28 @@ static bool test_rx_fragmentation(void) {
         uint8_t* buf = zp_rx_buf(&s_ctx);
         ASSERT_NOT_NULL(buf);
         buf[0] = packet[i];
-        zp_rx_commit(&s_ctx, 1);
+        s_ctx.rx_head += 1;
         if (i < sizeof(packet) - 1) {
-            // Callback must not have fired yet
-            ASSERT_EQ(0, s_sensor_received.sensor_id);
+            zp_msg_t msg;
+            ASSERT(!zp_poll(&s_ctx, &msg));
         }
     }
 
-    // After last byte, callback must have fired
-    ASSERT_EQ(1234, s_sensor_received.sensor_id);
-    ASSERT_EQ(18500, s_sensor_received.temp_milli);
-    ASSERT_EQ(true, s_sensor_received.is_active);
+    // After last byte, message must be ready
+    zp_msg_t msg;
+    ASSERT(zp_poll(&s_ctx, &msg));
+    ASSERT_EQ(msg.action, ACTION_UPDATE_DATA);
+    const sensor_t* rx_sensor = (const sensor_t*)msg.payload;
+    ASSERT_NOT_NULL(rx_sensor);
+    ASSERT_EQ(1234, rx_sensor->sensor_id);
+    ASSERT_EQ(18500, rx_sensor->temp_milli);
+    ASSERT_EQ(true, rx_sensor->is_active);
 
     return true;
 }
 
 static bool test_boolean_normalization(void) {
     test_setup();
-    memset(&s_sensor_received, 0, sizeof(s_sensor_received));
-    ZP_SUBSCRIBE(test_schema, ACTION_UPDATE_DATA, on_test_sensor);
 
     // Set non-standard boolean value (e.g. 0x42 instead of 0 or 1)
     sensor_t tx_sensor = {
@@ -451,11 +449,16 @@ static bool test_boolean_normalization(void) {
     uint8_t* buf = zp_rx_buf(&s_ctx);
     memcpy(buf, &hdr, sizeof(hdr));
     memcpy(buf + sizeof(hdr), &tx_sensor, sizeof(tx_sensor));
-    zp_rx_commit(&s_ctx, sizeof(hdr) + sizeof(tx_sensor));
+    s_ctx.rx_head += sizeof(hdr) + sizeof(tx_sensor);
+
+    zp_msg_t msg;
+    ASSERT(zp_poll(&s_ctx, &msg));
+    const sensor_t* rx_sensor = (const sensor_t*)msg.payload;
+    ASSERT_NOT_NULL(rx_sensor);
 
     // Protocol must normalize boolean to exactly 1 (true)
-    ASSERT_EQ(true, s_sensor_received.is_active);
-    ASSERT_EQ(1, (int)s_sensor_received.is_active);
+    ASSERT_EQ(true, rx_sensor->is_active);
+    ASSERT_EQ(1, (int)rx_sensor->is_active);
 
     return true;
 }
@@ -473,7 +476,10 @@ static bool test_internal_pool_sys_actions(void) {
     uint8_t* buf = zp_rx_buf(&s_ctx);
     memcpy(buf, &store_hdr, sizeof(store_hdr));
     memcpy(buf + sizeof(store_hdr), &raw_bool, sizeof(raw_bool));
-    zp_rx_commit(&s_ctx, sizeof(store_hdr) + sizeof(raw_bool));
+    s_ctx.rx_head += sizeof(store_hdr) + sizeof(raw_bool);
+
+    zp_msg_t msg;
+    ASSERT(!zp_poll(&s_ctx, &msg));
 
     ASSERT_EQ(true, s_ctx.pool_len > 0);
     bool* b_val = zp_pool_get_typed(&s_ctx, bool, 0);
@@ -498,7 +504,8 @@ static bool test_internal_pool_sys_actions(void) {
     };
     buf = zp_rx_buf(&s_ctx);
     memcpy(buf, &edit_pkt, sizeof(edit_pkt));
-    zp_rx_commit(&s_ctx, sizeof(edit_pkt));
+    s_ctx.rx_head += sizeof(edit_pkt);
+    ASSERT(!zp_poll(&s_ctx, &msg));
 
     b_val = zp_pool_get_typed(&s_ctx, bool, 0);
     ASSERT_NOT_NULL(b_val);
@@ -512,7 +519,8 @@ static bool test_internal_pool_sys_actions(void) {
     };
     buf = zp_rx_buf(&s_ctx);
     memcpy(buf, &reset_hdr, sizeof(reset_hdr));
-    zp_rx_commit(&s_ctx, sizeof(reset_hdr));
+    s_ctx.rx_head += sizeof(reset_hdr);
+    ASSERT(!zp_poll(&s_ctx, &msg));
 
     // Pool must be cleanly reset
     ASSERT_EQ(0, s_ctx.pool_len);
@@ -573,6 +581,68 @@ static bool test_uninitialized_guard(void) {
     return true;
 }
 
+static bool test_rx_compaction_on_boundary(void) {
+    test_setup();
+
+    // 1. Consume a ping packet so rx_tail > 0
+    zp_header_t ping_hdr = {
+        .action = ACTION_PING,
+        .type_id = TYPE_ID_NONE,
+        .count = 0,
+    };
+    uint8_t* buf = zp_rx_buf(&s_ctx);
+    memcpy(buf, &ping_hdr, sizeof(ping_hdr));
+    s_ctx.rx_head += sizeof(ping_hdr);
+
+    zp_msg_t msg;
+    ASSERT(zp_poll(&s_ctx, &msg));
+    ASSERT_EQ(ACTION_PING, msg.action);
+
+    // 2. Prepare a sensor packet
+    sensor_t s = {.sensor_id = 42, .temp_milli = 25000, .is_active = true};
+    zp_header_t s_hdr = {
+        .action = ACTION_UPDATE_DATA,
+        .type_id = zp_type_id(&test_schema, sensor_t),
+        .count = 1,
+    };
+    uint8_t pkt[sizeof(zp_header_t) + sizeof(sensor_t)];
+    memcpy(pkt, &s_hdr, sizeof(s_hdr));
+    memcpy(pkt + sizeof(s_hdr), &s, sizeof(s));
+
+    // Place only part1 (6 bytes) at the very end of rx_buf
+    size_t part1_len = 6;
+    s_ctx.rx_tail = s_ctx.rx_cap - part1_len;
+    s_ctx.rx_head = s_ctx.rx_cap;  // hits the ceiling!
+    memcpy(s_ctx.rx_buf + s_ctx.rx_tail, pkt, part1_len);
+
+    // 3. zp_poll detects incomplete packet and boundary collision, compacts to
+    // 0
+    ASSERT(!zp_poll(&s_ctx, &msg));
+    ASSERT_EQ(0, s_ctx.rx_tail);
+    ASSERT_EQ(part1_len, s_ctx.rx_head);
+
+    // 4. Now zp_rx_avail has free space
+    size_t avail = zp_rx_avail(&s_ctx);
+    ASSERT(avail > sizeof(pkt));
+
+    // 5. Append part2 into the freed space
+    size_t part2_len = sizeof(pkt) - part1_len;
+    uint8_t* rx_dest = zp_rx_buf(&s_ctx);
+    memcpy(rx_dest, pkt + part1_len, part2_len);
+    s_ctx.rx_head += part2_len;
+
+    // 6. zp_poll successfully decodes the complete packet
+    ASSERT(zp_poll(&s_ctx, &msg));
+    ASSERT_EQ(ACTION_UPDATE_DATA, msg.action);
+    const sensor_t* rx_s = (const sensor_t*)msg.payload;
+    ASSERT_NOT_NULL(rx_s);
+    ASSERT_EQ(42, rx_s->sensor_id);
+    ASSERT_EQ(25000, rx_s->temp_milli);
+    ASSERT_EQ(true, rx_s->is_active);
+
+    return true;
+}
+
 // =============================================================================
 // Main Runner
 // =============================================================================
@@ -592,6 +662,7 @@ int main(void) {
     RUN_TEST(test_internal_pool_sys_actions);
     RUN_TEST(test_lock_callbacks);
     RUN_TEST(test_uninitialized_guard);
+    RUN_TEST(test_rx_compaction_on_boundary);
 
     TEST_SUITE_END();
 }

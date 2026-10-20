@@ -103,9 +103,6 @@ typedef void (*zp_lock_fn_t)(zp_ctx_t* ctx, zp_lock_target_t target);
 typedef zp_ssize_t (*zp_writev_fn_t)(
     zp_ctx_t* ctx, const zp_iovec_t* iov, int iovcnt
 );
-typedef bool (*zp_dispatch_fn_t)(
-    zp_ctx_t* ctx, const zp_header_t* hdr, const void* payload
-);
 
 typedef enum {
     ZP_STATE_UNINITIALIZED = 0,
@@ -117,7 +114,6 @@ typedef enum {
 struct zp_ctx {
     const zp_schema_t* schema;
     zp_writev_fn_t writev;
-    zp_dispatch_fn_t dispatch;
     zp_lock_fn_t lock;
     zp_lock_fn_t unlock;
     uint8_t* rx_buf;
@@ -126,7 +122,8 @@ struct zp_ctx {
     void* transport;
 
     size_t rx_cap;
-    size_t rx_len;
+    size_t rx_head;  // writes to buffer
+    size_t rx_tail;  // reads the buffer
 
     uint32_t state;
     uint16_t pool_cap;
@@ -145,8 +142,8 @@ struct zp_ctx {
         if ((ctx)->unlock) (ctx)->unlock((ctx), (target)); \
     } while (0)
 
-#define zp_rx_buf(ctx) ((ctx)->rx_buf + (ctx)->rx_len)
-#define zp_rx_avail(ctx) ((ctx)->rx_cap - (ctx)->rx_len)
+size_t zp_rx_avail(zp_ctx_t* ctx);
+uint8_t* zp_rx_buf(zp_ctx_t* ctx);
 
 // Schema metadata =============================================================
 typedef struct zp_field_meta zp_field_meta_t;
@@ -184,7 +181,6 @@ typedef struct {
 struct zp_schema {
     const zp_type_meta_t* const* types;
     const zp_action_meta_t* actions;
-    zp_dispatch_fn_t dispatch;
     uint8_t type_count;
     uint8_t action_count;
 };
@@ -262,8 +258,16 @@ void zp_pool_reset(zp_ctx_t* ctx);
     zp_pool_push((ctx), zp_type_id((ctx)->schema, type), (ptr), (count))
 
 // Core runtime ================================================================
+
+typedef struct {
+    uint8_t action;
+    uint8_t type_id;
+    uint16_t count;
+    const void* payload;
+} zp_msg_t;
+
 zp_ctx_t* zp_init(zp_ctx_t* ctx);
-void zp_rx_commit(zp_ctx_t* ctx, size_t len);
+bool zp_poll(zp_ctx_t* ctx, zp_msg_t* msg);
 void zp_send_handshake(zp_ctx_t* ctx);
 void zp_emit_log(
     zp_ctx_t* ctx, zp_log_level_t level, zp_status_t code, uint16_t extra
@@ -301,21 +305,6 @@ zp_ssize_t zp_send(
         "Action limit exceeded"                                             \
     );                                                                      \
                                                                             \
-    void (*__##Name##_callbacks[sizeof(Name##_actions) /                    \
-                             sizeof(Name##_actions[0])])(void) = {0};       \
-                                                                            \
-    static bool Name##_dispatch(                                            \
-        zp_ctx_t* ctx, const zp_header_t* hdr, const void* payload          \
-    ) {                                                                     \
-        (void)ctx; (void)hdr; (void)payload;                                \
-        void (** const __zp_callbacks)(void) = __##Name##_callbacks;        \
-        switch (hdr->action) {                                              \
-            ActionsMacro(ZP_DISPATCH_V, ZP_DISPATCH_T, ZP_DISPATCH_A)       \
-            default:                                                        \
-                return false;                                               \
-        }                                                                   \
-    }                                                                       \
-                                                                            \
     static const zp_type_meta_t* const Name##_types[] = {                   \
         TypesMacro(_ZP_REF_TYPE_META)                                       \
     };                                                                      \
@@ -331,16 +320,8 @@ zp_ssize_t zp_send(
         .type_count = sizeof(Name##_types) / sizeof(Name##_types[0]),       \
         .actions = Name##_actions,                                          \
         .action_count = sizeof(Name##_actions) / sizeof(Name##_actions[0]), \
-        .dispatch = Name##_dispatch,                                        \
     };
 // clang-format on
-
-#define ZP_SUBSCRIBE(schema, action_name, fn)                       \
-    do {                                                            \
-        extern void (*__##schema##_callbacks[])(void);              \
-        zp_cb_##action_name##_t _chk = (fn);                        \
-        __##schema##_callbacks[action_name] = (void (*)(void))_chk; \
-    } while (0)
 
 #define zp_emit(...)                                                             \
     __ZP_EMIT_DISPATCH(__VA_ARGS__, __ZP_EMIT_TA, __ZP_EMIT_TA, __ZP_EMIT_V, 0)( \

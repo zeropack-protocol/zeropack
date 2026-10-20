@@ -8,13 +8,10 @@ zp_ctx_t* zp_init(zp_ctx_t* ctx) {
     size_t rx_pad = (-rx_addr) & 7;
     if (ctx->rx_cap < rx_pad + 8) return NULL;
 
-    if (!ctx->dispatch) {
-        ctx->dispatch = ctx->schema->dispatch;
-    }
-
     ctx->rx_buf = (uint8_t*)ctx->rx_buf + rx_pad + 4;
     ctx->rx_cap -= (rx_pad + 4);
-    ctx->rx_len = 0;
+    ctx->rx_head = 0;
+    ctx->rx_tail = 0;
     ctx->pool_len = 0;
 
     if (ctx->pool_buf) {

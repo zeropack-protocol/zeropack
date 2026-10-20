@@ -85,56 +85,6 @@ extern size_t strlen(const char* s);
         ActionsMacro(_ZP_GEN_ACTION_ID, _ZP_GEN_ACTION_ID, _ZP_GEN_ACTION_ID) \
     };
 
-// callback signatures and dispatch
-
-#define _ZP_CB_TYPE_V(name, ...) \
-    typedef void (*zp_cb_##name##_t)(zp_ctx_t * ctx);
-#define ZP_CB_TYPE_V(...) _ZP_CB_TYPE_V(__VA_ARGS__, 0)
-
-#define _ZP_CB_TYPE_T(name, type, ...) \
-    typedef void (*zp_cb_##name##_t)(zp_ctx_t * ctx, const type* data);
-#define ZP_CB_TYPE_T(...) _ZP_CB_TYPE_T(__VA_ARGS__, 0)
-
-#define _ZP_CB_TYPE_A(name, type, ...)                   \
-    typedef void (*zp_cb_##name##_t)(                    \
-        zp_ctx_t * ctx, const type* data, uint16_t count \
-    );
-#define ZP_CB_TYPE_A(...) _ZP_CB_TYPE_A(__VA_ARGS__, 0)
-
-#define _ZP_DECLARE_CALLBACKS(ActionsMacro) \
-    ActionsMacro(ZP_CB_TYPE_V, ZP_CB_TYPE_T, ZP_CB_TYPE_A)
-
-#define _ZP_DISPATCH_V(name, ...)                          \
-    case name:                                             \
-        if (__zp_callbacks[name]) {                        \
-            ((zp_cb_##name##_t)__zp_callbacks[name])(ctx); \
-            return true;                                   \
-        }                                                  \
-        return false;
-#define ZP_DISPATCH_V(...) _ZP_DISPATCH_V(__VA_ARGS__, 0)
-
-#define _ZP_DISPATCH_T(name, type, ...)               \
-    case name:                                        \
-        if (__zp_callbacks[name]) {                   \
-            ((zp_cb_##name##_t)__zp_callbacks[name])( \
-                ctx, (const type*)payload             \
-            );                                        \
-            return true;                              \
-        }                                             \
-        return false;
-#define ZP_DISPATCH_T(...) _ZP_DISPATCH_T(__VA_ARGS__, 0)
-
-#define _ZP_DISPATCH_A(name, type, ...)               \
-    case name:                                        \
-        if (__zp_callbacks[name]) {                   \
-            ((zp_cb_##name##_t)__zp_callbacks[name])( \
-                ctx, (const type*)payload, hdr->count \
-            );                                        \
-            return true;                              \
-        }                                             \
-        return false;
-#define ZP_DISPATCH_A(...) _ZP_DISPATCH_A(__VA_ARGS__, 0)
-
 // emitters
 
 #define _ZP_INLINE __attribute__((unused, always_inline)) static inline
@@ -200,7 +150,6 @@ extern size_t strlen(const char* s);
 
 #define _ZP_DECLARE_ACTIONS(ActionsMacro) \
     _ZP_DECLARE_ACTION_IDS(ActionsMacro)  \
-    _ZP_DECLARE_CALLBACKS(ActionsMacro)   \
     _ZP_DECLARE_SENDERS(ActionsMacro)
 
 #define _ZP_REF_TYPE_META(StructName, ...) &__zp_meta_##StructName,
