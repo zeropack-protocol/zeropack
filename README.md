@@ -15,7 +15,7 @@ It features zero dynamic heap allocations, compile-time schema reflection using 
 
 - **No Heap Allocations:** Never calls `malloc` or `free`. Operates on static buffers and caller memory.
 - **Freestanding C11:** Zero libc, POSIX, or OS dependencies. Runs on bare-metal microcontrollers (ARM Cortex-M, RISC-V), RTOS (FreeRTOS, Zephyr), and host OSes.
-- **No Codegen CLI:** Structs, type IDs, and dispatch tables are generated at compile time using standard C macros.
+- **No Codegen CLI:** Structs, type IDs, and wire metadata are generated at compile time using standard C macros.
 - **Optional Handshake:** Announce struct layouts and action descriptors dynamically across the wire, or skip entirely for fixed-schema links.
 - **Transport Agnostic:** Transmits via a `writev` callback over UART, SPI, I2C, BLE, TCP, or shared memory.
 
@@ -97,7 +97,7 @@ Declare your application schema using standard C macros. Actions support optiona
 // Declare type IDs, struct layouts, and inline senders
 ZP_DECLARE(APP_TYPES, APP_ACTIONS)
 
-// Generate runtime schema metadata and dispatcher
+// Generate runtime schema metadata
 ZP_GENERATE_SCHEMA(app_schema, APP_TYPES, APP_ACTIONS)
 ```
 
@@ -136,42 +136,52 @@ zp_ctx_t ctx = {
 zp_init(&ctx);
 ```
 
-### 4. Register Event Callbacks & Emit Actions
+### 4. Emit Actions
+
+Emit typed or void actions over the wire with compile-time type safety:
 
 ```c
-static void on_report(zp_ctx_t* ctx, const SensorReport* report) {
-    (void)ctx;
-    printf("Received: Temp=%.2f C, Humidity=%.2f %%\n",
-           report->temperature, report->humidity);
-}
+// Emit an action with a typed payload
+SensorReport data = {
+    .temperature = 24.5f,
+    .humidity = 60.2f,
+    .timestamp = 12000,
+};
+zp_emit(&ctx, ACTION_REPORT, &data);
 
-int main(void) {
-    // Register callback for incoming ACTION_REPORT events
-    ZP_SUBSCRIBE(app_schema, ACTION_REPORT, on_report);
-
-    // Emit an event over the wire
-    SensorReport data = {
-        .temperature = 24.5f,
-        .humidity = 60.2f,
-        .timestamp = 12000,
-    };
-    zp_emit(&ctx, ACTION_REPORT, &data);
-
-    // Emit void actions with zero payload
-    zp_emit(&ctx, ACTION_PING);
-
-    return 0;
-}
+// Emit void actions with zero payload
+zp_emit(&ctx, ACTION_PING);
 ```
 
-### 5. Zero-Copy Ingress Buffer Leasing
+### 5. Ingress Ingestion & Non-Blocking Polling (`zp_poll`)
 
-Lease ingress space directly from ZeroPack's RX buffer (ideal for DMA or non-blocking socket reads) and commit received bytes:
+ZeroPack uses a pull-based, lock-free cursor design (`rx_head` / `rx_tail`). Lease contiguous space directly from the RX buffer (ideal for DMA or non-blocking socket/UART reads) and poll messages:
 
 ```c
-void on_uart_rx_ready(zp_ctx_t* ctx) {
-    size_t received = uart_read_bytes(zp_rx_buf(ctx), zp_rx_avail(ctx));
-    zp_rx_commit(ctx, received);
+// Ingest raw bytes from hardware or transport into the RX buffer:
+size_t received = uart_read_bytes(zp_rx_buf(&ctx), zp_rx_avail(&ctx));
+if (received > 0) {
+    ctx.rx_head += received;
+}
+
+// Poll decoded messages in your event loop or consumer task:
+zp_msg_t msg;
+while (zp_poll(&ctx, &msg)) {
+    switch (msg.action) {
+    case ACTION_PING:
+        printf("Received ACTION_PING\n");
+        break;
+
+    case ACTION_REPORT: {
+        const SensorReport* report = (const SensorReport*)msg.payload;
+        printf("Received: Temp=%.2f C, Humidity=%.2f %%\n",
+               report->temperature, report->humidity);
+        break;
+    }
+
+    default:
+        break;
+    }
 }
 ```
 
@@ -206,7 +216,7 @@ char* status_str = zp_pool_get_str(ctx, ref_str);
 
 ## Building and Testing
  
-A self-contained test suite and a loopback example demonstrating action emission, typed callbacks, and binary handshake transmission are provided.
+A self-contained test suite and a loopback example demonstrating action emission, `zp_poll` decoding, and binary handshake transmission are provided.
  
 ```bash
 # Run unit tests (100% pure C11 freestanding suite)
@@ -222,11 +232,11 @@ Output:
 
 [Step 1] Emitting ACTION_PING...
 --> Transport: Transmitting 4 bytes [ACTION_PING]...
-  [Callback] Handled ACTION_PING (void action)
+  [Poll] Received ACTION_PING (void action)
 
 [Step 2] Emitting ACTION_REPORT (SensorReport payload)...
 --> Transport: Transmitting 16 bytes [ACTION_REPORT]...
-  [Callback] Handled ACTION_REPORT:
+  [Poll] Received ACTION_REPORT:
     Temperature : 23.45 C
     Humidity    : 58.20 %
     Timestamp   : 42000 ms

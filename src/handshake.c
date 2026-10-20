@@ -37,7 +37,6 @@ void zp_send_handshake(zp_ctx_t* ctx) {
         .pool_item_count = pool_item_count,
     };
 
-    ZP_LOCK(ctx, ZP_LOCK_TX);
     zp_send_pair(ctx, &hs, sizeof(hs), NULL, 0);
 
     for (uint8_t i = 0; i < ctx->schema->type_count; i++) {
@@ -99,5 +98,4 @@ void zp_send_handshake(zp_ctx_t* ctx) {
         offset += total_slot;
     }
     ctx->state |= ZP_STATE_HANDSHAKE_SENT;
-    ZP_UNLOCK(ctx, ZP_LOCK_TX);
 }

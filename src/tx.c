@@ -23,9 +23,7 @@ zp_ssize_t zp_send_raw(
 
     int iovcnt = (payload != NULL && size > 0) ? 2 : 1;
 
-    ZP_LOCK(ctx, ZP_LOCK_TX);
     zp_ssize_t ret = ctx->writev(ctx, iov, iovcnt);
-    ZP_UNLOCK(ctx, ZP_LOCK_TX);
     return ret;
 }
 

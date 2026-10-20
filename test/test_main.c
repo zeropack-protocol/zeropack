@@ -119,29 +119,8 @@ static zp_ssize_t test_writev(
     return written;
 }
 
-static int s_lock_pool_count = 0;
-static int s_unlock_pool_count = 0;
-static int s_lock_tx_count = 0;
-static int s_unlock_tx_count = 0;
-
-static void test_lock(zp_ctx_t* ctx, zp_lock_target_t target) {
-    (void)ctx;
-    if (target == ZP_LOCK_POOL) s_lock_pool_count++;
-    if (target == ZP_LOCK_TX) s_lock_tx_count++;
-}
-
-static void test_unlock(zp_ctx_t* ctx, zp_lock_target_t target) {
-    (void)ctx;
-    if (target == ZP_LOCK_POOL) s_unlock_pool_count++;
-    if (target == ZP_LOCK_TX) s_unlock_tx_count++;
-}
-
 static void test_setup(void) {
     s_tx_capture_len = 0;
-    s_lock_pool_count = 0;
-    s_unlock_pool_count = 0;
-    s_lock_tx_count = 0;
-    s_unlock_tx_count = 0;
     memset(s_rx_buf, 0, sizeof(s_rx_buf));
     memset(s_pool_buf, 0, sizeof(s_pool_buf));
     memset(s_tx_capture, 0, sizeof(s_tx_capture));
@@ -149,8 +128,6 @@ static void test_setup(void) {
     s_ctx = (zp_ctx_t){
         .schema = &test_schema,
         .writev = test_writev,
-        .lock = test_lock,
-        .unlock = test_unlock,
         ZP_BUFFER(rx, s_rx_buf),
         ZP_BUFFER(pool, s_pool_buf),
     };
@@ -528,34 +505,6 @@ static bool test_internal_pool_sys_actions(void) {
     return true;
 }
 
-static bool test_lock_callbacks(void) {
-    test_setup();
-
-    // Pool push must lock and unlock pool mutex symmetrically
-    sensor_t s = {.sensor_id = 123};
-    zp_pool_push_val(&s_ctx, sensor_t, s);
-    ASSERT_EQ(1, s_lock_pool_count);
-    ASSERT_EQ(1, s_unlock_pool_count);
-
-    // TX send must lock and unlock TX mutex symmetrically
-    zp_emit(&s_ctx, ACTION_PING);
-    ASSERT_EQ(1, s_lock_tx_count);
-    ASSERT_EQ(1, s_unlock_tx_count);
-
-    // Pool edit must lock and unlock pool mutex
-    sensor_t s2 = {.sensor_id = 456};
-    zp_pool_edit(&s_ctx, 0, zp_type_id(&test_schema, sensor_t), &s2, 1);
-    ASSERT_EQ(2, s_lock_pool_count);
-    ASSERT_EQ(2, s_unlock_pool_count);
-
-    // Pool reset must lock and unlock pool mutex
-    zp_pool_reset(&s_ctx);
-    ASSERT_EQ(3, s_lock_pool_count);
-    ASSERT_EQ(3, s_unlock_pool_count);
-
-    return true;
-}
-
 static bool test_uninitialized_guard(void) {
     zp_ctx_t uninit_ctx = {
         .schema = &test_schema,
@@ -660,7 +609,6 @@ int main(void) {
     RUN_TEST(test_rx_fragmentation);
     RUN_TEST(test_boolean_normalization);
     RUN_TEST(test_internal_pool_sys_actions);
-    RUN_TEST(test_lock_callbacks);
     RUN_TEST(test_uninitialized_guard);
     RUN_TEST(test_rx_compaction_on_boundary);
 

@@ -90,61 +90,6 @@ typedef struct {
     uint16_t extra;
 } zp_log_msg_t;
 
-// Context & configuration =====================================================
-typedef enum {
-    ZP_LOCK_TX = 0,
-    ZP_LOCK_POOL = 1,
-} zp_lock_target_t;
-
-typedef struct zp_ctx zp_ctx_t;
-typedef struct zp_schema zp_schema_t;
-
-typedef void (*zp_lock_fn_t)(zp_ctx_t* ctx, zp_lock_target_t target);
-typedef zp_ssize_t (*zp_writev_fn_t)(
-    zp_ctx_t* ctx, const zp_iovec_t* iov, int iovcnt
-);
-
-typedef enum {
-    ZP_STATE_UNINITIALIZED = 0,
-    ZP_STATE_INITIALIZED = (1 << 0),
-    ZP_STATE_HANDSHAKE_SENT = (1 << 1),
-    ZP_STATE_CONNECTED = (1 << 2),
-} zp_state_t;
-
-struct zp_ctx {
-    const zp_schema_t* schema;
-    zp_writev_fn_t writev;
-    zp_lock_fn_t lock;
-    zp_lock_fn_t unlock;
-    uint8_t* rx_buf;
-    uint8_t* pool_buf;
-    void* userdata;
-    void* transport;
-
-    size_t rx_cap;
-    size_t rx_head;  // writes to buffer
-    size_t rx_tail;  // reads the buffer
-
-    uint32_t state;
-    uint16_t pool_cap;
-    uint16_t pool_len;
-};
-
-#define ZP_BUFFER(n, s) .n##_buf = (uint8_t*)(s), .n##_cap = sizeof(s)
-
-#define ZP_LOCK(ctx, target)                           \
-    do {                                               \
-        if ((ctx)->lock) (ctx)->lock((ctx), (target)); \
-    } while (0)
-
-#define ZP_UNLOCK(ctx, target)                             \
-    do {                                                   \
-        if ((ctx)->unlock) (ctx)->unlock((ctx), (target)); \
-    } while (0)
-
-size_t zp_rx_avail(zp_ctx_t* ctx);
-uint8_t* zp_rx_buf(zp_ctx_t* ctx);
-
 // Schema metadata =============================================================
 typedef struct zp_field_meta zp_field_meta_t;
 typedef struct zp_type_meta zp_type_meta_t;
@@ -178,12 +123,12 @@ typedef struct {
     uint8_t is_array;
 } zp_action_meta_t;
 
-struct zp_schema {
+typedef struct zp_schema {
     const zp_type_meta_t* const* types;
     const zp_action_meta_t* actions;
     uint8_t type_count;
     uint8_t action_count;
-};
+} zp_schema_t;
 
 uint8_t zp_get_meta_id(const zp_schema_t* schema, const zp_type_meta_t* meta);
 const zp_type_meta_t* zp_get_type_meta(
@@ -193,6 +138,41 @@ size_t zp_get_type_size(const zp_schema_t* schema, uint8_t type_id);
 const char* zp_get_type_name(const zp_schema_t* schema, uint8_t type_id);
 
 #define zp_type_id(schema, T) zp_get_meta_id((schema), zp_type_meta(T))
+
+// Context & configuration =====================================================
+typedef enum {
+    ZP_STATE_UNINITIALIZED = 0,
+    ZP_STATE_INITIALIZED = (1 << 0),
+    ZP_STATE_HANDSHAKE_SENT = (1 << 1),
+    ZP_STATE_CONNECTED = (1 << 2),
+} zp_state_t;
+
+typedef struct zp_ctx zp_ctx_t;
+typedef zp_ssize_t (*zp_writev_fn_t)(
+    zp_ctx_t* ctx, const zp_iovec_t* iov, int iovcnt
+);
+
+struct zp_ctx {
+    const zp_schema_t* schema;
+    zp_writev_fn_t writev;
+    uint8_t* rx_buf;
+    uint8_t* pool_buf;
+    void* userdata;
+    void* transport;
+
+    size_t rx_cap;
+    size_t rx_head;  // writes to buffer
+    size_t rx_tail;  // reads the buffer
+
+    uint32_t state;
+    uint16_t pool_cap;
+    uint16_t pool_len;
+};
+
+#define ZP_BUFFER(n, s) .n##_buf = (uint8_t*)(s), .n##_cap = sizeof(s)
+
+size_t zp_rx_avail(zp_ctx_t* ctx);
+uint8_t* zp_rx_buf(zp_ctx_t* ctx);
 
 // Memory pool =================================================================
 typedef enum {
