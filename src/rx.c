@@ -117,7 +117,7 @@ static inline bool zp_rx_try_compact(zp_ctx_t* ctx, size_t unread) {
     return false;
 }
 
-bool zp_poll(zp_ctx_t* ctx, zp_msg_t* msg) {
+bool zp_recv(zp_ctx_t* ctx, zp_msg_t* msg) {
     if (!ctx || !ctx->buf) return false;
 
     size_t unread = ctx->head - ctx->tail;
@@ -158,7 +158,7 @@ bool zp_poll(zp_ctx_t* ctx, zp_msg_t* msg) {
     if (hdr->action >= ZP_SYS_ACTION_START) {
         handle_internal(ctx, hdr, payload);
         ctx->tail += total_packet_len;
-        return zp_poll(ctx, msg);
+        return zp_recv(ctx, msg);
     }
 
     if (msg) {

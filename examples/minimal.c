@@ -58,14 +58,14 @@ static void flush_bus_to_receiver(zp_ctx_t* ctx, const char* label) {
     s_pending_rx_len = 0;
 
     zp_msg_t msg;
-    while (zp_poll(ctx, &msg)) {
+    while (zp_recv(ctx, &msg)) {
         switch (msg.action) {
             case ACTION_PING:
-                printf("  [Poll] Received ACTION_PING (void action)\n");
+                printf("  [Recv] Received ACTION_PING (void action)\n");
                 break;
             case ACTION_REPORT: {
                 const SensorReport* report = (const SensorReport*)msg.payload;
-                printf("  [Poll] Received ACTION_REPORT:\n");
+                printf("  [Recv] Received ACTION_REPORT:\n");
                 printf(
                     "    Temperature : %.2f C\n", (double)report->temperature
                 );

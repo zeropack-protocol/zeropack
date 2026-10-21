@@ -223,7 +223,7 @@ typedef struct {
 } zp_msg_t;
 
 zp_ctx_t* zp_init(zp_ctx_t* ctx);
-bool zp_poll(zp_ctx_t* ctx, zp_msg_t* msg);
+bool zp_recv(zp_ctx_t* ctx, zp_msg_t* msg);
 void zp_send_handshake(zp_ctx_t* ctx);
 void zp_emit_log(
     zp_ctx_t* ctx, zp_log_level_t level, zp_status_t code, uint16_t extra

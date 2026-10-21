@@ -155,9 +155,9 @@ zp_send(&ctx, ACTION_REPORT, &data, 1);
 zp_send(&ctx, ACTION_PING, NULL, 0);
 ```
 
-### 5. Ingress Ingestion & Non-Blocking Polling (`zp_poll`)
+### 5. Ingress Ingestion & Non-Blocking Reception (`zp_recv`)
 
-ZeroPack uses a pull-based, lock-free cursor design (`head` / `tail`). Lease contiguous space directly from the buffer with `zp_buffer()` (ideal for DMA or non-blocking socket/UART reads) and poll messages:
+ZeroPack uses a pull-based, lock-free cursor design (`head` / `tail`). Lease contiguous space directly from the buffer with `zp_buffer()` (ideal for DMA or non-blocking socket/UART reads) and receive messages:
 
 ```c
 // Ingest raw bytes from hardware or transport into the buffer:
@@ -170,9 +170,9 @@ if (dest && avail > 0) {
     }
 }
 
-// Poll decoded messages in your event loop or consumer task:
+// Receive decoded messages in your event loop or consumer task:
 zp_msg_t msg;
-while (zp_poll(&ctx, &msg)) {
+while (zp_recv(&ctx, &msg)) {
     switch (msg.action) {
     case ACTION_PING:
         printf("Received ACTION_PING\n");
@@ -222,7 +222,7 @@ char* status_str = zp_pool_get_str(ctx, ref_str);
 
 ## Building and Testing
  
-A self-contained test suite and a loopback example demonstrating action emission, `zp_poll` decoding, and binary handshake transmission are provided.
+A self-contained test suite and a loopback example demonstrating action emission, `zp_recv` decoding, and binary handshake transmission are provided.
  
 ```bash
 # Run unit tests (100% pure C11 freestanding suite)
