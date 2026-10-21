@@ -54,7 +54,7 @@ static void flush_bus_to_receiver(zp_ctx_t* ctx, const char* label) {
         s_pending_rx_len,
         label
     );
-    ctx->head += s_pending_rx_len;
+    ctx->buf.head += s_pending_rx_len;
     s_pending_rx_len = 0;
 
     zp_msg_t msg;
@@ -93,10 +93,8 @@ int main(void) {
     zp_ctx_t ctx = {
         .schema = &example_schema,
         .writev = loopback_writev,
-        .buf = s_rx,
-        .cap = sizeof(s_rx),
-        .pool = s_pool,
-        .pool_cap = sizeof(s_pool),
+        .buf = {.data = s_rx, .cap = sizeof(s_rx)},
+        .pool = {.data = s_pool, .cap = sizeof(s_pool)},
     };
     zp_init(&ctx);
 

@@ -130,10 +130,8 @@ static uint8_t s_pool[1024] __attribute__((aligned(8)));
 zp_ctx_t ctx = {
     .schema = &app_schema,
     .writev = my_uart_writev,
-    .buf = s_buf,
-    .cap = sizeof(s_buf),
-    .pool = s_pool,
-    .pool_cap = sizeof(s_pool),
+    .buf = {.data = s_buf, .cap = sizeof(s_buf)},
+    .pool = {.data = s_pool, .cap = sizeof(s_pool)},
 };
 zp_init(&ctx);
 ```
@@ -166,7 +164,7 @@ uint8_t* dest = zp_buffer(&ctx, &avail);
 if (dest && avail > 0) {
     size_t received = uart_read_bytes(dest, avail);
     if (received > 0) {
-        ctx.head += received;
+        ctx.buf.head += received;
     }
 }
 

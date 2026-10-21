@@ -7,7 +7,7 @@
 ZP_PRIMITIVES(ZP_DEF_PRIM_META)
 #undef ZP_DEF_PRIM_META
 
-uint8_t zp_get_meta_id(const zp_schema_t* schema, const zp_type_meta_t* meta) {
+uint8_t zp_get_id(const zp_schema_t* schema, const zp_type_meta_t* meta) {
     if (!meta) return TYPE_ID_NONE;
 
     if (!meta->fields) {
@@ -24,9 +24,7 @@ uint8_t zp_get_meta_id(const zp_schema_t* schema, const zp_type_meta_t* meta) {
     return TYPE_ID_NONE;
 }
 
-const zp_type_meta_t* zp_get_type_meta(
-    const zp_schema_t* schema, uint8_t type_id
-) {
+const zp_type_meta_t* zp_get_meta(const zp_schema_t* schema, uint8_t type_id) {
 #define SW_PRIM(p)    \
     case TYPE_ID_##p: \
         return zp_metaof(p);
@@ -45,9 +43,4 @@ const zp_type_meta_t* zp_get_type_meta(
     return (index < schema->type_count) ? schema->types[index] : NULL;
 
 #undef SW_PRIM
-}
-
-size_t zp_get_type_size(const zp_schema_t* schema, uint8_t type_id) {
-    const zp_type_meta_t* meta = zp_get_type_meta(schema, type_id);
-    return meta ? meta->size : 0;
 }

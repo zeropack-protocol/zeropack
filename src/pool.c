@@ -1,16 +1,16 @@
 #include "zeropack.h"
 
 bool zp_pool_is_valid(const zp_ctx_t* ctx, poolref_t ref) {
-    if (!ctx || !ctx->pool) return false;
+    if (!ctx || !ctx->pool.data) return false;
     if ((ref & 7) != 0) return false;
 
     size_t offset = 0;
-    while (offset + sizeof(zp_pool_slot_t) <= ctx->pool_len) {
+    while (offset + sizeof(zp_pool_slot_t) <= ctx->pool.head) {
         zp_pool_slot_t* slot = zp_pool_slot(ctx, offset);
         if (slot->cap == 0) return false;
 
         size_t total_slot = sizeof(zp_pool_slot_t) + (size_t)slot->cap;
-        if ((total_slot & 7) != 0 || total_slot > ctx->pool_len - offset) {
+        if ((total_slot & 7) != 0 || total_slot > ctx->pool.head - offset) {
             return false;
         }
 
@@ -37,15 +37,16 @@ void* zp_pool_get_checked(
 poolref_t zp_pool_push_raw(
     zp_ctx_t* ctx, uint8_t type_id, const void* data, uint16_t count
 ) {
-    if (!ctx || !ctx->pool || ctx->pool_cap == 0 || !data || count == 0) {
+    if (!ctx || !ctx->pool.data || ctx->pool.cap == 0 || !data || count == 0) {
         return 0xFFFF;
     }
 
-    size_t type_size = zp_get_type_size(ctx->schema, type_id);
-    if (type_size == 0) return 0xFFFF;
+    const zp_type_meta_t* meta = zp_get_meta(ctx->schema, type_id);
+    if (!meta || meta->size == 0) return 0xFFFF;
+    size_t type_size = meta->size;
 
-    if (ctx->pool_cap <= sizeof(zp_pool_slot_t) ||
-        (size_t)count > (ctx->pool_cap - sizeof(zp_pool_slot_t)) / type_size) {
+    if (ctx->pool.cap <= sizeof(zp_pool_slot_t) ||
+        (size_t)count > (ctx->pool.cap - sizeof(zp_pool_slot_t)) / type_size) {
         return 0xFFFF;
     }
 
@@ -56,16 +57,16 @@ poolref_t zp_pool_push_raw(
         return 0xFFFF;
     }
 
-    zp_pool_slot_t* slot = (zp_pool_slot_t*)(ctx->pool + ctx->pool_len);
+    zp_pool_slot_t* slot = (zp_pool_slot_t*)(ctx->pool.data + ctx->pool.head);
     slot->type_id = type_id;
     slot->flags = ZP_POOL_FLAG_NONE;
     slot->count = count;
     slot->cap = (uint16_t)(total_slot - sizeof(zp_pool_slot_t));
 
-    poolref_t ref = (poolref_t)ctx->pool_len;
+    poolref_t ref = (poolref_t)ctx->pool.head;
     zp_memcpy(slot + 1, data, total_len);
 
-    ctx->pool_len += total_slot;
+    ctx->pool.head += total_slot;
 
     return ref;
 }
@@ -77,7 +78,7 @@ zp_status_t zp_pool_edit(
     const void* data,
     uint16_t count
 ) {
-    if (!ctx || !ctx->pool || ctx->pool_cap == 0 || !data || count == 0) {
+    if (!ctx || !ctx->pool.data || ctx->pool.cap == 0 || !data || count == 0) {
         return ZP_INVALID_ACTION;
     }
 
@@ -93,10 +94,12 @@ zp_status_t zp_pool_edit(
         return ZP_POOL_TYPE_MISMATCH;
     }
 
-    size_t type_size = zp_get_type_size(ctx->schema, type_id);
-    if (type_size == 0 || (size_t)count > (size_t)slot->cap / type_size) {
+    const zp_type_meta_t* meta = zp_get_meta(ctx->schema, type_id);
+    if (!meta || meta->size == 0 ||
+        (size_t)count > (size_t)slot->cap / meta->size) {
         return ZP_POOL_SLOT_EXCEEDED;
     }
+    size_t type_size = meta->size;
 
     size_t data_len = type_size * (size_t)count;
     slot->count = count;
@@ -108,5 +111,6 @@ zp_status_t zp_pool_edit(
 
 void zp_pool_reset(zp_ctx_t* ctx) {
     if (!ctx) return;
-    ctx->pool_len = 0;
+    ctx->pool.head = 0;
+    ctx->pool.tail = 0;
 }

@@ -128,10 +128,8 @@ static void test_setup(void) {
     s_ctx = (zp_ctx_t){
         .schema = &test_schema,
         .writev = test_writev,
-        .buf = s_rx_buf,
-        .cap = sizeof(s_rx_buf),
-        .pool = s_pool_buf,
-        .pool_cap = sizeof(s_pool_buf),
+        .buf = {.data = s_rx_buf, .cap = sizeof(s_rx_buf)},
+        .pool = {.data = s_pool_buf, .cap = sizeof(s_pool_buf)},
     };
     zp_init(&s_ctx);
 }
@@ -191,7 +189,7 @@ static bool test_pool_strings(void) {
 
     // Check slot capacity and alignment (8-byte aligned)
     size_t expected_slot_size = ZP_SLOT_TOTAL_SIZE(strlen(original) + 1);
-    ASSERT_EQ(expected_slot_size, s_ctx.pool_len);
+    ASSERT_EQ(expected_slot_size, s_ctx.pool.head);
 
     return true;
 }
@@ -300,7 +298,7 @@ static bool test_pool_edit_and_reset(void) {
 
     // Pool reset restores capacity from 0
     zp_pool_reset(&s_ctx);
-    ASSERT_EQ(0, s_ctx.pool_len);
+    ASSERT_EQ(0, s_ctx.pool.head);
 
     poolref_t new_ref = zp_pool_push_str(&s_ctx, "fresh");
     ASSERT_EQ(0, new_ref);
@@ -324,7 +322,7 @@ static bool test_rx_pipeline_and_dispatch(void) {
     };
     uint8_t* buf = zp_buffer(&s_ctx, NULL);
     memcpy(buf, &ping_hdr, sizeof(ping_hdr));
-    s_ctx.head += sizeof(ping_hdr);
+    s_ctx.buf.head += sizeof(ping_hdr);
 
     zp_msg_t msg;
     ASSERT(zp_recv(&s_ctx, &msg));
@@ -348,7 +346,7 @@ static bool test_rx_pipeline_and_dispatch(void) {
     buf = zp_buffer(&s_ctx, NULL);
     memcpy(buf, &sensor_hdr, sizeof(sensor_hdr));
     memcpy(buf + sizeof(sensor_hdr), &tx_sensor, sizeof(tx_sensor));
-    s_ctx.head += sizeof(sensor_hdr) + sizeof(tx_sensor);
+    s_ctx.buf.head += sizeof(sensor_hdr) + sizeof(tx_sensor);
 
     ASSERT(zp_recv(&s_ctx, &msg));
     ASSERT_EQ(msg.action, ACTION_UPDATE_DATA);
@@ -387,7 +385,7 @@ static bool test_rx_fragmentation(void) {
         uint8_t* buf = zp_buffer(&s_ctx, NULL);
         ASSERT_NOT_NULL(buf);
         buf[0] = packet[i];
-        s_ctx.head += 1;
+        s_ctx.buf.head += 1;
         if (i < sizeof(packet) - 1) {
             zp_msg_t msg;
             ASSERT(!zp_recv(&s_ctx, &msg));
@@ -428,7 +426,7 @@ static bool test_boolean_normalization(void) {
     uint8_t* buf = zp_buffer(&s_ctx, NULL);
     memcpy(buf, &hdr, sizeof(hdr));
     memcpy(buf + sizeof(hdr), &tx_sensor, sizeof(tx_sensor));
-    s_ctx.head += sizeof(hdr) + sizeof(tx_sensor);
+    s_ctx.buf.head += sizeof(hdr) + sizeof(tx_sensor);
 
     zp_msg_t msg;
     ASSERT(zp_recv(&s_ctx, &msg));
@@ -455,12 +453,12 @@ static bool test_internal_pool_sys_actions(void) {
     uint8_t* buf = zp_buffer(&s_ctx, NULL);
     memcpy(buf, &store_hdr, sizeof(store_hdr));
     memcpy(buf + sizeof(store_hdr), &raw_bool, sizeof(raw_bool));
-    s_ctx.head += sizeof(store_hdr) + sizeof(raw_bool);
+    s_ctx.buf.head += sizeof(store_hdr) + sizeof(raw_bool);
 
     zp_msg_t msg;
     ASSERT(!zp_recv(&s_ctx, &msg));
 
-    ASSERT_EQ(true, s_ctx.pool_len > 0);
+    ASSERT_EQ(true, s_ctx.pool.head > 0);
     bool* b_val = zp_pool_get(&s_ctx, bool, 0, NULL);
     ASSERT_NOT_NULL(b_val);
     ASSERT_EQ(true, *b_val);
@@ -483,7 +481,7 @@ static bool test_internal_pool_sys_actions(void) {
     };
     buf = zp_buffer(&s_ctx, NULL);
     memcpy(buf, &edit_pkt, sizeof(edit_pkt));
-    s_ctx.head += sizeof(edit_pkt);
+    s_ctx.buf.head += sizeof(edit_pkt);
     ASSERT(!zp_recv(&s_ctx, &msg));
 
     b_val = zp_pool_get(&s_ctx, bool, 0, NULL);
@@ -498,11 +496,11 @@ static bool test_internal_pool_sys_actions(void) {
     };
     buf = zp_buffer(&s_ctx, NULL);
     memcpy(buf, &reset_hdr, sizeof(reset_hdr));
-    s_ctx.head += sizeof(reset_hdr);
+    s_ctx.buf.head += sizeof(reset_hdr);
     ASSERT(!zp_recv(&s_ctx, &msg));
 
     // Pool must be cleanly reset
-    ASSERT_EQ(0, s_ctx.pool_len);
+    ASSERT_EQ(0, s_ctx.pool.head);
 
     return true;
 }
@@ -510,7 +508,8 @@ static bool test_internal_pool_sys_actions(void) {
 static bool test_uninitialized_guard(void) {
     zp_ctx_t null_ctx = {0};
 
-    // Any operation on null/empty context must be safely rejected without crashing
+    // Any operation on null/empty context must be safely rejected without
+    // crashing
     ASSERT_EQ(-1, zp_send_raw(&null_ctx, 1, 1, 0, NULL, 0));
     ASSERT_EQ(-1, zp_send(&null_ctx, 0, NULL, 0));
     size_t avail = 99;
@@ -538,14 +537,12 @@ static bool test_uninitialized_guard(void) {
     zp_ctx_t uninit_ctx = {
         .schema = &test_schema,
         .writev = test_writev,
-        .buf = s_rx_buf,
-        .cap = sizeof(s_rx_buf),
-        .pool = s_pool_buf,
-        .pool_cap = sizeof(s_pool_buf),
+        .buf = {.data = s_rx_buf, .cap = sizeof(s_rx_buf)},
+        .pool = {.data = s_pool_buf, .cap = sizeof(s_pool_buf)},
     };
     // Calling zp_init activates the context
     ASSERT_EQ(&uninit_ctx, zp_init(&uninit_ctx));
-    ASSERT(uninit_ctx.buf != NULL);
+    ASSERT(uninit_ctx.buf.data != NULL);
 
     return true;
 }
@@ -561,7 +558,7 @@ static bool test_rx_compaction_on_boundary(void) {
     };
     uint8_t* buf = zp_buffer(&s_ctx, NULL);
     memcpy(buf, &ping_hdr, sizeof(ping_hdr));
-    s_ctx.head += sizeof(ping_hdr);
+    s_ctx.buf.head += sizeof(ping_hdr);
 
     zp_msg_t msg;
     ASSERT(zp_recv(&s_ctx, &msg));
@@ -580,14 +577,15 @@ static bool test_rx_compaction_on_boundary(void) {
 
     // Place only part1 (6 bytes) at the very end of buf
     size_t part1_len = 6;
-    s_ctx.tail = s_ctx.cap - part1_len;
-    s_ctx.head = s_ctx.cap;  // hits the ceiling!
-    memcpy(s_ctx.buf + s_ctx.tail, pkt, part1_len);
+    s_ctx.buf.tail = s_ctx.buf.cap - part1_len;
+    s_ctx.buf.head = s_ctx.buf.cap;  // hits the ceiling!
+    memcpy(s_ctx.buf.data + s_ctx.buf.tail, pkt, part1_len);
 
-    // 3. zp_recv detects incomplete packet and boundary collision, compacts to 0
+    // 3. zp_recv detects incomplete packet and boundary collision, compacts to
+    // 0
     ASSERT(!zp_recv(&s_ctx, &msg));
-    ASSERT_EQ(0, s_ctx.tail);
-    ASSERT_EQ(part1_len, s_ctx.head);
+    ASSERT_EQ(0, s_ctx.buf.tail);
+    ASSERT_EQ(part1_len, s_ctx.buf.head);
 
     // 4. Now zp_buffer has free space
     size_t avail = 0;
@@ -598,7 +596,7 @@ static bool test_rx_compaction_on_boundary(void) {
     // 5. Append part2 into the freed space
     size_t part2_len = sizeof(pkt) - part1_len;
     memcpy(rx_dest, pkt + part1_len, part2_len);
-    s_ctx.head += part2_len;
+    s_ctx.buf.head += part2_len;
 
     // 6. zp_recv successfully decodes the complete packet
     ASSERT(zp_recv(&s_ctx, &msg));

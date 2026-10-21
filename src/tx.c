@@ -26,10 +26,7 @@ zp_ssize_t zp_send_raw(
 }
 
 zp_ssize_t zp_send(
-    zp_ctx_t* ctx,
-    uint8_t action,
-    const void* payload,
-    uint16_t count
+    zp_ctx_t* ctx, uint8_t action, const void* payload, uint16_t count
 ) {
     if (!ctx || !ctx->schema || action >= ctx->schema->action_count) {
         return -1;
@@ -39,7 +36,7 @@ zp_ssize_t zp_send(
     size_t size = 0;
     const zp_type_meta_t* type = ctx->schema->actions[action].type;
     if (type) {
-        type_id = zp_get_meta_id(ctx->schema, type);
+        type_id = zp_get_id(ctx->schema, type);
         size = (size_t)count * type->size;
     } else {
         count = 0;

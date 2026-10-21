@@ -19,10 +19,10 @@ void zp_send_handshake(zp_ctx_t* ctx) {
 
     uint16_t pool_item_count = 0;
     size_t offset = 0;
-    while (offset + sizeof(zp_pool_slot_t) <= ctx->pool_len) {
+    while (offset + sizeof(zp_pool_slot_t) <= ctx->pool.head) {
         zp_pool_slot_t* slot = zp_pool_slot(ctx, offset);
         size_t total_slot = sizeof(zp_pool_slot_t) + (size_t)slot->cap;
-        if (slot->cap == 0 || total_slot > ctx->pool_len - offset) break;
+        if (slot->cap == 0 || total_slot > ctx->pool.head - offset) break;
         pool_item_count++;
         offset += total_slot;
     }
@@ -31,7 +31,7 @@ void zp_send_handshake(zp_ctx_t* ctx) {
         .magic = 'Z',
         .byteord = (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__),
         .reserved = 0x28,  // 0b101000
-        .pool_size = ctx->pool_cap,
+        .pool_size = (uint16_t)ctx->pool.cap,
         .type_count = ctx->schema->type_count,
         .action_count = ctx->schema->action_count,
         .pool_item_count = pool_item_count,
@@ -57,9 +57,7 @@ void zp_send_handshake(zp_ctx_t* ctx) {
                 uint8_t type;
                 uint16_t offset;
                 uint16_t length;
-            } f_hdr = {
-                zp_get_meta_id(ctx->schema, f->type), f->offset, f->length
-            };
+            } f_hdr = {zp_get_id(ctx->schema, f->type), f->offset, f->length};
 
             zp_send_pair(
                 ctx, &f_hdr, sizeof(f_hdr), f->name, zp_strlen(f->name) + 1
@@ -69,7 +67,7 @@ void zp_send_handshake(zp_ctx_t* ctx) {
 
     for (uint8_t i = 0; i < ctx->schema->action_count; i++) {
         const zp_action_meta_t* a = &ctx->schema->actions[i];
-        uint8_t a_hdr[2] = {zp_get_meta_id(ctx->schema, a->type), a->is_array};
+        uint8_t a_hdr[2] = {zp_get_id(ctx->schema, a->type), a->is_array};
 
         zp_send_pair(
             ctx, a_hdr, sizeof(a_hdr), a->name, zp_strlen(a->name) + 1
@@ -77,13 +75,13 @@ void zp_send_handshake(zp_ctx_t* ctx) {
     }
 
     offset = 0;
-    while (offset + sizeof(zp_pool_slot_t) <= ctx->pool_len) {
+    while (offset + sizeof(zp_pool_slot_t) <= ctx->pool.head) {
         zp_pool_slot_t* slot = zp_pool_slot(ctx, offset);
         size_t total_slot = sizeof(zp_pool_slot_t) + (size_t)slot->cap;
-        if (slot->cap == 0 || total_slot > ctx->pool_len - offset) break;
+        if (slot->cap == 0 || total_slot > ctx->pool.head - offset) break;
 
-        size_t type_size = zp_get_type_size(ctx->schema, slot->type_id);
-        size_t data_len = type_size * (size_t)slot->count;
+        const zp_type_meta_t* meta = zp_get_meta(ctx->schema, slot->type_id);
+        size_t data_len = meta ? (size_t)meta->size * slot->count : 0;
 
         struct __attribute__((packed)) {
             poolref_t ref;
@@ -91,9 +89,7 @@ void zp_send_handshake(zp_ctx_t* ctx) {
             uint16_t count;
         } p_hdr = {(poolref_t)offset, slot->type_id, slot->count};
 
-        zp_send_pair(
-            ctx, &p_hdr, sizeof(p_hdr), slot + 1, data_len
-        );
+        zp_send_pair(ctx, &p_hdr, sizeof(p_hdr), slot + 1, data_len);
 
         offset += total_slot;
     }
