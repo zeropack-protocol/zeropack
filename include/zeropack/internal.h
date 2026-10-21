@@ -77,23 +77,24 @@ extern size_t strlen(const char* s);
 #define _ZP_ARG2(_1, _2, NAME, ...) NAME
 #define _ZP_ARG3(_1, _2, _3, NAME, ...) NAME
 
-#define _ZP_ACTION_V_1(_name) {.name = #_name, .type = NULL, .is_array = 0},
+#define _ZP_ACTION_V_1(_name) \
+    [_name] = {.name = #_name, .type = NULL, .is_array = 0},
 #define _ZP_ACTION_V_2(_name, _alias) \
-    {.name = _alias, .type = NULL, .is_array = 0},
+    [_name] = {.name = _alias, .type = NULL, .is_array = 0},
 #define _ZP_ACTION_V(...) \
     _ZP_ARG2(__VA_ARGS__, _ZP_ACTION_V_2, _ZP_ACTION_V_1, 0)(__VA_ARGS__)
 
 #define _ZP_ACTION_T_2(_name, _type) \
-    {.name = #_name, .type = zp_metaof(_type), .is_array = 0},
+    [_name] = {.name = #_name, .type = zp_metaof(_type), .is_array = 0},
 #define _ZP_ACTION_T_3(_name, _type, _alias) \
-    {.name = _alias, .type = zp_metaof(_type), .is_array = 0},
+    [_name] = {.name = _alias, .type = zp_metaof(_type), .is_array = 0},
 #define _ZP_ACTION_T(...) \
     _ZP_ARG3(__VA_ARGS__, _ZP_ACTION_T_3, _ZP_ACTION_T_2, 0)(__VA_ARGS__)
 
 #define _ZP_ACTION_A_2(_name, _type) \
-    {.name = #_name, .type = zp_metaof(_type), .is_array = 1},
+    [_name] = {.name = #_name, .type = zp_metaof(_type), .is_array = 1},
 #define _ZP_ACTION_A_3(_name, _type, _alias) \
-    {.name = _alias, .type = zp_metaof(_type), .is_array = 1},
+    [_name] = {.name = _alias, .type = zp_metaof(_type), .is_array = 1},
 #define _ZP_ACTION_A(...) \
     _ZP_ARG3(__VA_ARGS__, _ZP_ACTION_A_3, _ZP_ACTION_A_2, 0)(__VA_ARGS__)
 
