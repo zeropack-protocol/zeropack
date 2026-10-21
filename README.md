@@ -94,11 +94,11 @@ Declare your application schema using standard C macros. Actions support optiona
     V(ACTION_PONG)                         \
     T(ACTION_REPORT, SensorReport, "WIRE_REPORT")
 
-// Declare type IDs, struct layouts, and inline senders
-ZP_DECLARE(APP_TYPES, APP_ACTIONS)
+// Declare struct layouts and metadata
+ZP_DECLARE(APP_TYPES)
 
-// Generate runtime schema metadata
-ZP_GENERATE_SCHEMA(app_schema, APP_TYPES, APP_ACTIONS)
+// Generate runtime schema metadata and action IDs
+ZP_SCHEMA(app_schema, APP_TYPES, APP_ACTIONS)
 ```
 
 ### 2. Implement Transport

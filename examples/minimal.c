@@ -19,10 +19,10 @@
     V(ACTION_PONG)              \
     T(ACTION_REPORT, SensorReport, "WIRE_REPORT")
 
-ZP_DECLARE(APP_TYPES, APP_ACTIONS)
+ZP_DECLARE(APP_TYPES)
 
 // Generate the runtime schema metadata and dispatch table
-ZP_GENERATE_SCHEMA(example_schema, APP_TYPES, APP_ACTIONS)
+ZP_SCHEMA(example_schema, APP_TYPES, APP_ACTIONS)
 
 // -----------------------------------------------------------------------------
 // Simulated Loopback Transport (Writes directly into ZeroPack's leased rx

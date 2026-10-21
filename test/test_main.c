@@ -89,8 +89,8 @@ static int s_tests_failed = 0;
     T(ACTION_SET_COORD, coord_t)    \
     A(ACTION_SEND_BUFFER, u8)
 
-ZP_DECLARE(TEST_TYPES, TEST_ACTIONS)
-ZP_GENERATE_SCHEMA(test_schema, TEST_TYPES, TEST_ACTIONS)
+ZP_DECLARE(TEST_TYPES)
+ZP_SCHEMA(test_schema, TEST_TYPES, TEST_ACTIONS)
 
 // =============================================================================
 // Test Context & Dummy Transport

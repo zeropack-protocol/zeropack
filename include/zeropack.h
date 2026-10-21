@@ -258,12 +258,13 @@ zp_ssize_t zp_send_arr(
 );
 
 // Schema & action macros ======================================================
-#define ZP_DECLARE(TypesMacro, ActionsMacro) \
-    _ZP_GENERATE_TYPES(TypesMacro)           \
-    _ZP_DECLARE_ACTIONS(ActionsMacro)
-
 // clang-format off
-#define ZP_GENERATE_SCHEMA(Name, TypesMacro, ActionsMacro)                  \
+#define ZP_DECLARE(TypesMacro)   \
+    TypesMacro(_ZP_DECLARE_TYPE) \
+    TypesMacro(_ZP_MAKE_TYPE_META)
+
+#define ZP_SCHEMA(Name, TypesMacro, ActionsMacro)                           \
+    _ZP_DECLARE_ACTIONS(ActionsMacro)                                       \
     static const zp_action_meta_t Name##_actions[] = {                      \
         ActionsMacro(_ZP_ACTION_V, _ZP_ACTION_T, _ZP_ACTION_A)              \
     };                                                                      \
