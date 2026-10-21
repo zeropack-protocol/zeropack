@@ -506,26 +506,26 @@ static bool test_internal_pool_sys_actions(void) {
 }
 
 static bool test_uninitialized_guard(void) {
+    zp_ctx_t null_ctx = {0};
+
+    // Any operation on null/empty context must be safely rejected without crashing
+    ASSERT_EQ(-1, zp_send_raw(&null_ctx, 1, 1, 0, NULL, 0));
+    ASSERT_EQ(0xFFFF, zp_pool_push(&null_ctx, TYPE_ID_u8, "test", 4));
+    ASSERT_EQ(
+        ZP_INVALID_ACTION, zp_pool_edit(&null_ctx, 0, TYPE_ID_u8, "test", 4)
+    );
+    ASSERT_EQ(false, zp_pool_is_valid(&null_ctx, 0));
+    ASSERT_EQ(false, zp_poll(&null_ctx, NULL));
+
     zp_ctx_t uninit_ctx = {
         .schema = &test_schema,
         .writev = test_writev,
         ZP_BUFFER(rx, s_rx_buf),
         ZP_BUFFER(pool, s_pool_buf),
     };
-    // Notice: zp_init(&uninit_ctx) is deliberately NOT called!
-    ASSERT_EQ(ZP_STATE_UNINITIALIZED, uninit_ctx.state);
-
-    // Any operation must be safely rejected without crashing or UB
-    ASSERT_EQ(-1, zp_send_raw(&uninit_ctx, 1, 1, 0, NULL, 0));
-    ASSERT_EQ(0xFFFF, zp_pool_push(&uninit_ctx, TYPE_ID_u8, "test", 4));
-    ASSERT_EQ(
-        ZP_INVALID_ACTION, zp_pool_edit(&uninit_ctx, 0, TYPE_ID_u8, "test", 4)
-    );
-    ASSERT_EQ(false, zp_pool_is_valid(&uninit_ctx, 0));
-
     // Calling zp_init activates the context
     ASSERT_EQ(&uninit_ctx, zp_init(&uninit_ctx));
-    ASSERT_EQ(true, (uninit_ctx.state & ZP_STATE_INITIALIZED) != 0);
+    ASSERT(uninit_ctx.rx_buf != NULL);
 
     return true;
 }

@@ -100,7 +100,7 @@ int main(void) {
 
     // Emit a void action (no payload)
     printf("\n[Step 1] Emitting ACTION_PING...");
-    zp_emit(&ctx, ACTION_PING);
+    zp_send_cmd(&ctx, ACTION_PING);
     flush_bus_to_receiver(&ctx, "ACTION_PING");
 
     // Emit a structured action
@@ -110,7 +110,7 @@ int main(void) {
         .timestamp = 42000,
     };
     printf("\n[Step 2] Emitting ACTION_REPORT (SensorReport payload)...");
-    zp_emit(&ctx, ACTION_REPORT, &sample);
+    zp_send(&ctx, ACTION_REPORT, &sample);
     flush_bus_to_receiver(&ctx, "ACTION_REPORT");
 
     // Send binary handshake schema

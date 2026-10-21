@@ -140,13 +140,6 @@ const char* zp_get_type_name(const zp_schema_t* schema, uint8_t type_id);
 #define zp_type_id(schema, T) zp_get_meta_id((schema), zp_type_meta(T))
 
 // Context & configuration =====================================================
-typedef enum {
-    ZP_STATE_UNINITIALIZED = 0,
-    ZP_STATE_INITIALIZED = (1 << 0),
-    ZP_STATE_HANDSHAKE_SENT = (1 << 1),
-    ZP_STATE_CONNECTED = (1 << 2),
-} zp_state_t;
-
 typedef struct zp_ctx zp_ctx_t;
 typedef zp_ssize_t (*zp_writev_fn_t)(
     zp_ctx_t* ctx, const zp_iovec_t* iov, int iovcnt
@@ -157,14 +150,12 @@ struct zp_ctx {
     zp_writev_fn_t writev;
     uint8_t* rx_buf;
     uint8_t* pool_buf;
-    void* userdata;
     void* transport;
 
     size_t rx_cap;
     size_t rx_head;  // writes to buffer
     size_t rx_tail;  // reads the buffer
 
-    uint32_t state;
     uint16_t pool_cap;
     uint16_t pool_len;
 };
@@ -260,12 +251,10 @@ zp_ssize_t zp_send_raw(
     const void* payload,
     size_t size
 );
-zp_ssize_t zp_send(
-    zp_ctx_t* ctx,
-    uint8_t action,
-    uint16_t count,
-    const void* payload,
-    size_t size
+zp_ssize_t zp_send_cmd(zp_ctx_t* ctx, uint8_t action);
+zp_ssize_t zp_send(zp_ctx_t* ctx, uint8_t action, const void* payload);
+zp_ssize_t zp_send_arr(
+    zp_ctx_t* ctx, uint8_t action, const void* payload, uint16_t count
 );
 
 // Schema & action macros ======================================================
@@ -302,10 +291,5 @@ zp_ssize_t zp_send(
         .action_count = sizeof(Name##_actions) / sizeof(Name##_actions[0]), \
     };
 // clang-format on
-
-#define zp_emit(...)                                                             \
-    __ZP_EMIT_DISPATCH(__VA_ARGS__, __ZP_EMIT_TA, __ZP_EMIT_TA, __ZP_EMIT_V, 0)( \
-        __VA_ARGS__                                                              \
-    )
 
 #include "zeropack/internal.h"

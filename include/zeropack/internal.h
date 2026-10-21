@@ -80,41 +80,10 @@ extern size_t strlen(const char* s);
 #define _ZP_GEN_ACTION_ID_IMPL(name, ...) name,
 #define _ZP_GEN_ACTION_ID(...) _ZP_GEN_ACTION_ID_IMPL(__VA_ARGS__, 0)
 
-#define _ZP_DECLARE_ACTION_IDS(ActionsMacro)                                  \
+#define _ZP_DECLARE_ACTIONS(ActionsMacro)                                     \
     enum {                                                                    \
         ActionsMacro(_ZP_GEN_ACTION_ID, _ZP_GEN_ACTION_ID, _ZP_GEN_ACTION_ID) \
     };
-
-// emitters
-
-#define _ZP_INLINE __attribute__((unused, always_inline)) static inline
-
-#define _ZP_SEND_FN_V(name, ...)                            \
-    _ZP_INLINE zp_ssize_t __zp_emit_##name(zp_ctx_t* ctx) { \
-        return zp_send(ctx, name, 0, NULL, 0);              \
-    }
-#define ZP_SEND_FN_V(...) _ZP_SEND_FN_V(__VA_ARGS__, 0)
-
-#define _ZP_SEND_FN_T(name, type, ...)                                        \
-    _ZP_INLINE zp_ssize_t __zp_emit_##name(zp_ctx_t* ctx, const type* data) { \
-        return zp_send(ctx, name, 1, data, sizeof(type));                     \
-    }
-#define ZP_SEND_FN_T(...) _ZP_SEND_FN_T(__VA_ARGS__, 0)
-
-#define _ZP_SEND_FN_A(name, type, ...)                                        \
-    _ZP_INLINE zp_ssize_t __zp_emit_##name(                                   \
-        zp_ctx_t* ctx, const type* data, uint16_t count                       \
-    ) {                                                                       \
-        return zp_send(ctx, name, count, data, (size_t)count * sizeof(type)); \
-    }
-#define ZP_SEND_FN_A(...) _ZP_SEND_FN_A(__VA_ARGS__, 0)
-
-#define _ZP_DECLARE_SENDERS(ActionsMacro) \
-    ActionsMacro(ZP_SEND_FN_V, ZP_SEND_FN_T, ZP_SEND_FN_A)
-
-#define __ZP_EMIT_V(ctx, name) __zp_emit_##name(ctx)
-#define __ZP_EMIT_TA(ctx, name, ...) __zp_emit_##name(ctx, __VA_ARGS__)
-#define __ZP_EMIT_DISPATCH(_1, _2, _3, _4, NAME, ...) NAME
 
 // type metadata
 
@@ -147,10 +116,6 @@ extern size_t strlen(const char* s);
 #define _ZP_GENERATE_TYPES(TypesMacro) \
     _ZP_GEN_TYPE_DECL(TypesMacro)      \
     _ZP_GEN_TYPE_META(TypesMacro)
-
-#define _ZP_DECLARE_ACTIONS(ActionsMacro) \
-    _ZP_DECLARE_ACTION_IDS(ActionsMacro)  \
-    _ZP_DECLARE_SENDERS(ActionsMacro)
 
 #define _ZP_REF_TYPE_META(StructName, ...) &__zp_meta_##StructName,
 

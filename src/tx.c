@@ -8,7 +8,7 @@ zp_ssize_t zp_send_raw(
     const void* payload,
     size_t size
 ) {
-    if (!ctx || !(ctx->state & ZP_STATE_INITIALIZED)) return -1;
+    if (!ctx || !ctx->writev) return -1;
 
     zp_header_t hdr = {
         .action = action,
@@ -27,19 +27,37 @@ zp_ssize_t zp_send_raw(
     return ret;
 }
 
+zp_ssize_t zp_send_arr(
+    zp_ctx_t* ctx,
+    uint8_t action,
+    const void* payload,
+    uint16_t count
+) {
+    uint8_t type_id = TYPE_ID_NONE;
+    size_t size = 0;
+    if (ctx && ctx->schema && action < ctx->schema->action_count) {
+        const zp_type_meta_t* type = ctx->schema->actions[action].type;
+        if (type) {
+            type_id = zp_get_meta_id(ctx->schema, type);
+            size = (size_t)count * type->size;
+        }
+    }
+    return zp_send_raw(ctx, action, type_id, count, payload, size);
+}
+
 zp_ssize_t zp_send(
     zp_ctx_t* ctx,
     uint8_t action,
-    uint16_t count,
-    const void* payload,
-    size_t size
+    const void* payload
 ) {
-    uint8_t type_id = TYPE_ID_NONE;
-    if (ctx && ctx->schema && action < ctx->schema->action_count) {
-        type_id =
-            zp_get_meta_id(ctx->schema, ctx->schema->actions[action].type);
-    }
-    return zp_send_raw(ctx, action, type_id, count, payload, size);
+    return zp_send_arr(ctx, action, payload, 1);
+}
+
+zp_ssize_t zp_send_cmd(
+    zp_ctx_t* ctx,
+    uint8_t action
+) {
+    return zp_send_raw(ctx, action, TYPE_ID_NONE, 0, NULL, 0);
 }
 
 void zp_emit_log(

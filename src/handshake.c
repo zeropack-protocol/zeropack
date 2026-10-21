@@ -15,7 +15,7 @@ static void zp_send_pair(
 }
 
 void zp_send_handshake(zp_ctx_t* ctx) {
-    if (!ctx || !(ctx->state & ZP_STATE_INITIALIZED)) return;
+    if (!ctx || !ctx->schema || !ctx->writev) return;
 
     uint16_t pool_item_count = 0;
     size_t offset = 0;
@@ -97,5 +97,4 @@ void zp_send_handshake(zp_ctx_t* ctx) {
 
         offset += total_slot;
     }
-    ctx->state |= ZP_STATE_HANDSHAKE_SENT;
 }

@@ -26,6 +26,5 @@ zp_ctx_t* zp_init(zp_ctx_t* ctx) {
         ctx->pool_cap = 0;
     }
 
-    ctx->state = ZP_STATE_INITIALIZED;
     return ctx;
 }

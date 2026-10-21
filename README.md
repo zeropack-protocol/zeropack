@@ -147,10 +147,10 @@ SensorReport data = {
     .humidity = 60.2f,
     .timestamp = 12000,
 };
-zp_emit(&ctx, ACTION_REPORT, &data);
+zp_send(&ctx, ACTION_REPORT, &data);
 
 // Emit void actions with zero payload
-zp_emit(&ctx, ACTION_PING);
+zp_send_cmd(&ctx, ACTION_PING);
 ```
 
 ### 5. Ingress Ingestion & Non-Blocking Polling (`zp_poll`)

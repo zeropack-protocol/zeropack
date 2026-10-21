@@ -120,7 +120,7 @@ static inline bool zp_rx_try_compact(zp_ctx_t* ctx, size_t unread) {
 }
 
 bool zp_poll(zp_ctx_t* ctx, zp_msg_t* msg) {
-    if (!ctx || !(ctx->state & ZP_STATE_INITIALIZED)) return false;
+    if (!ctx || !ctx->rx_buf) return false;
 
     size_t unread = ctx->rx_head - ctx->rx_tail;
     if (unread < sizeof(zp_header_t)) {
