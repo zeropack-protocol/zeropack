@@ -70,7 +70,7 @@ extern size_t strlen(const char* s);
                  sizeof(__zp_fields_##StructName[0]),           \
     };
 
-#define _ZP_REF_TYPE_META(StructName, ...) zp_metaof(StructName),
+#define _ZP_REF_TYPE_META(StructName, FieldsMacro) zp_metaof(StructName),
 
 // action metadata
 

@@ -19,7 +19,7 @@
     V(ACTION_PONG)              \
     T(ACTION_REPORT, SensorReport, "WIRE_REPORT")
 
-ZP_DECLARE(APP_TYPES)
+ZP_DECLARE(APP_TYPES, APP_ACTIONS)
 
 // Generate the runtime schema metadata and dispatch table
 ZP_SCHEMA(example_schema, APP_TYPES, APP_ACTIONS)

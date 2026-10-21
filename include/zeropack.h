@@ -240,14 +240,18 @@ zp_ssize_t zp_send(
 
 // Schema & action macros ======================================================
 // clang-format off
-#define ZP_DECLARE(TypesMacro)   \
+#define ZP_TYPES(TypesMacro)     \
     TypesMacro(_ZP_DECLARE_TYPE) \
     TypesMacro(_ZP_MAKE_TYPE_META)
 
+#define ZP_ACTIONS(ActionsMacro) \
+    enum { ActionsMacro(_ZP_GEN_ACTION_ID, _ZP_GEN_ACTION_ID, _ZP_GEN_ACTION_ID) };
+
+#define ZP_DECLARE(TypesMacro, ActionsMacro) \
+    ZP_TYPES(TypesMacro)                     \
+    ZP_ACTIONS(ActionsMacro)
+
 #define ZP_SCHEMA(Name, TypesMacro, ActionsMacro)                           \
-    enum {                                                                  \
-        ActionsMacro(_ZP_GEN_ACTION_ID, _ZP_GEN_ACTION_ID, _ZP_GEN_ACTION_ID)\
-    };                                                                      \
     static const zp_action_meta_t Name##_actions[] = {                      \
         ActionsMacro(_ZP_ACTION_V, _ZP_ACTION_T, _ZP_ACTION_A)              \
     };                                                                      \

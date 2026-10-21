@@ -78,18 +78,33 @@ static int s_tests_failed = 0;
     F(S, f32, y)              \
     F(S, f32, z)
 
-#define TEST_TYPES(X)          \
-    X(sensor_t, SENSOR_FIELDS) \
-    X(coord_t, COORD_FIELDS)
+#define SENSOR_TYPES(X) X(sensor_t, SENSOR_FIELDS)
+#define COORD_TYPES(X) X(coord_t, COORD_FIELDS)
 
-#define TEST_ACTIONS(V, T, A)       \
-    V(ACTION_PING, "WIRE_PING")     \
-    V(ACTION_RESET_DEV)             \
+// Composed types list demonstrates modular concatenation
+#define TEST_TYPES(X) \
+    SENSOR_TYPES(X)   \
+    COORD_TYPES(X)
+
+#define BASE_ACTIONS(V, T, A)   \
+    V(ACTION_PING, "WIRE_PING") \
+    V(ACTION_RESET_DEV)
+
+#define DATA_ACTIONS(V, T, A)       \
     T(ACTION_UPDATE_DATA, sensor_t) \
     T(ACTION_SET_COORD, coord_t)    \
     A(ACTION_SEND_BUFFER, u8)
 
-ZP_DECLARE(TEST_TYPES)
+// Composed actions list demonstrates modular concatenation
+#define TEST_ACTIONS(V, T, A) \
+    BASE_ACTIONS(V, T, A)     \
+    DATA_ACTIONS(V, T, A)
+
+#define SINGLE_FIELDS(S, F, A) F(S, u32, val)
+#define SINGLE_TYPES(X) X(single_item_t, SINGLE_FIELDS)
+ZP_TYPES(SINGLE_TYPES)
+
+ZP_DECLARE(TEST_TYPES, TEST_ACTIONS)
 ZP_SCHEMA(test_schema, TEST_TYPES, TEST_ACTIONS)
 
 // =============================================================================
@@ -163,6 +178,10 @@ static bool test_schema_metadata(void) {
     ASSERT_STR_EQ("WIRE_PING", test_schema.actions[0].name);
     ASSERT_STR_EQ("ACTION_RESET_DEV", test_schema.actions[1].name);
     ASSERT_STR_EQ("ACTION_UPDATE_DATA", test_schema.actions[2].name);
+
+    // Modular ZP_TYPES verification
+    ASSERT_EQ(sizeof(single_item_t), zp_metaof(single_item_t)->size);
+    ASSERT_STR_EQ("single_item_t", zp_metaof(single_item_t)->name);
 
     return true;
 }

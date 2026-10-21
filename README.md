@@ -94,10 +94,10 @@ Declare your application schema using standard C macros. Actions support optiona
     V(ACTION_PONG)                         \
     T(ACTION_REPORT, SensorReport, "WIRE_REPORT")
 
-// Declare struct layouts and metadata
-ZP_DECLARE(APP_TYPES)
+// Declare struct layouts, metadata, and action IDs
+ZP_DECLARE(APP_TYPES, APP_ACTIONS)
 
-// Generate runtime schema metadata and action IDs
+// Generate runtime schema metadata
 ZP_SCHEMA(app_schema, APP_TYPES, APP_ACTIONS)
 ```
 
