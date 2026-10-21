@@ -5,7 +5,6 @@
 typedef struct {
     size_t elem_size;
     size_t prefix_len;
-    size_t data_offset;
     size_t payload_len;
 } zp_rx_meta_t;
 
@@ -21,7 +20,6 @@ static zp_status_t zp_parse_packet_meta(
                 if (type_size == 0) return ZP_POOL_TYPE_MISMATCH;
                 if (hdr->count == 0) return ZP_INVALID_ACTION;
                 out->prefix_len = sizeof(poolref_t);
-                out->data_offset = sizeof(poolref_t);
                 out->elem_size = type_size;
                 break;
 
@@ -58,7 +56,7 @@ static zp_status_t zp_parse_packet_meta(
         out->elem_size = act->type ? act->type->size : 0;
     }
 
-    size_t max_payload = ctx->rx_cap - sizeof(zp_header_t);
+    size_t max_payload = ctx->cap - sizeof(zp_header_t);
     if (out->prefix_len > max_payload) return ZP_BUFFER_OVERFLOW;
     if (out->elem_size > 0 &&
         (size_t)hdr->count > (max_payload - out->prefix_len) / out->elem_size) {
@@ -86,7 +84,7 @@ static void handle_internal(
         }
         case ZP_SYS_ACTION_POOL_STORE: {
             poolref_t ref =
-                zp_pool_push(ctx, hdr->type_id, payload, hdr->count);
+                zp_pool_push_raw(ctx, hdr->type_id, payload, hdr->count);
 
             if (ref == 0xFFFF) {
                 zp_emit_log(ctx, ZP_LOG_ERROR, ZP_POOL_FULL, ctx->pool_len);
@@ -110,24 +108,24 @@ static void handle_internal(
 }
 
 static inline bool zp_rx_try_compact(zp_ctx_t* ctx, size_t unread) {
-    if (ctx->rx_head == ctx->rx_cap && ctx->rx_tail > 0) {
-        zp_memmove(ctx->rx_buf, ctx->rx_buf + ctx->rx_tail, unread);
-        ctx->rx_head = unread;
-        ctx->rx_tail = 0;
+    if (ctx->head == ctx->cap && ctx->tail > 0) {
+        zp_memmove(ctx->buf, ctx->buf + ctx->tail, unread);
+        ctx->head = unread;
+        ctx->tail = 0;
     }
 
     return false;
 }
 
 bool zp_poll(zp_ctx_t* ctx, zp_msg_t* msg) {
-    if (!ctx || !ctx->rx_buf) return false;
+    if (!ctx || !ctx->buf) return false;
 
-    size_t unread = ctx->rx_head - ctx->rx_tail;
+    size_t unread = ctx->head - ctx->tail;
     if (unread < sizeof(zp_header_t)) {
         return zp_rx_try_compact(ctx, unread);
     }
 
-    const zp_header_t* hdr = (const zp_header_t*)(ctx->rx_buf + ctx->rx_tail);
+    const zp_header_t* hdr = (const zp_header_t*)(ctx->buf + ctx->tail);
     zp_rx_meta_t meta;
     zp_status_t status = zp_parse_packet_meta(ctx, hdr, &meta);
     if (status != ZP_OK) {
@@ -140,18 +138,18 @@ bool zp_poll(zp_ctx_t* ctx, zp_msg_t* msg) {
         zp_emit_log(ctx, level, status, extra);
 
         // ignore all buffered packets, impossible to recover them
-        ctx->rx_tail = ctx->rx_head;
+        ctx->tail = ctx->head;
         return false;
     }
 
     size_t total_packet_len = sizeof(zp_header_t) + meta.payload_len;
     if (unread < total_packet_len) return zp_rx_try_compact(ctx, unread);
 
-    uint8_t* payload = ctx->rx_buf + ctx->rx_tail + sizeof(zp_header_t);
+    uint8_t* payload = ctx->buf + ctx->tail + sizeof(zp_header_t);
 
     // normalize bool values to 0 or 1
     if (hdr->type_id == TYPE_ID_bool) {
-        uint8_t* data = payload + meta.data_offset;
+        uint8_t* data = payload + meta.prefix_len;
         for (uint16_t i = 0; i < hdr->count; i++) {
             data[i] = (data[i] != 0);
         }
@@ -159,7 +157,7 @@ bool zp_poll(zp_ctx_t* ctx, zp_msg_t* msg) {
 
     if (hdr->action >= ZP_SYS_ACTION_START) {
         handle_internal(ctx, hdr, payload);
-        ctx->rx_tail += total_packet_len;
+        ctx->tail += total_packet_len;
         return zp_poll(ctx, msg);
     }
 
@@ -170,22 +168,20 @@ bool zp_poll(zp_ctx_t* ctx, zp_msg_t* msg) {
         msg->payload = (meta.payload_len > 0) ? payload : NULL;
     }
 
-    ctx->rx_tail += total_packet_len;
+    ctx->tail += total_packet_len;
     return true;
 }
 
-size_t zp_rx_avail(zp_ctx_t* ctx) {
-    if (ctx->rx_head == ctx->rx_tail) {
-        ctx->rx_head = 0;
-        ctx->rx_tail = 0;
+uint8_t* zp_buffer(zp_ctx_t* ctx, size_t* out_avail) {
+    if (!ctx || !ctx->buf) {
+        if (out_avail) *out_avail = 0;
+        return NULL;
     }
-    return ctx->rx_cap - ctx->rx_head;
-}
-
-uint8_t* zp_rx_buf(zp_ctx_t* ctx) {
-    if (ctx->rx_head == ctx->rx_tail) {
-        ctx->rx_head = 0;
-        ctx->rx_tail = 0;
+    if (ctx->head == ctx->tail) {
+        ctx->head = 0;
+        ctx->tail = 0;
     }
-    return ctx->rx_buf + ctx->rx_head;
+    size_t avail = ctx->cap - ctx->head;
+    if (out_avail) *out_avail = avail;
+    return (avail > 0) ? (ctx->buf + ctx->head) : NULL;
 }

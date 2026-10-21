@@ -92,7 +92,7 @@ void zp_send_handshake(zp_ctx_t* ctx) {
         } p_hdr = {(poolref_t)offset, slot->type_id, slot->count};
 
         zp_send_pair(
-            ctx, &p_hdr, sizeof(p_hdr), _zp_pool_get(ctx, offset), data_len
+            ctx, &p_hdr, sizeof(p_hdr), slot + 1, data_len
         );
 
         offset += total_slot;

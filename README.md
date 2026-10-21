@@ -124,14 +124,16 @@ static zp_ssize_t my_uart_writev(
 ZeroPack performs zero dynamic heap allocations. Memory buffers are provided directly by the caller upon initialization:
 
 ```c
-static uint8_t s_rx_buf[1024] __attribute__((aligned(8)));
-static uint8_t s_pool_buf[1024] __attribute__((aligned(8)));
+static uint8_t s_buf[1024] __attribute__((aligned(8)));
+static uint8_t s_pool[1024] __attribute__((aligned(8)));
 
 zp_ctx_t ctx = {
     .schema = &app_schema,
     .writev = my_uart_writev,
-    ZP_BUFFER(rx, s_rx_buf),
-    ZP_BUFFER(pool, s_pool_buf),
+    .buf = s_buf,
+    .cap = sizeof(s_buf),
+    .pool = s_pool,
+    .pool_cap = sizeof(s_pool),
 };
 zp_init(&ctx);
 ```
@@ -147,21 +149,25 @@ SensorReport data = {
     .humidity = 60.2f,
     .timestamp = 12000,
 };
-zp_send(&ctx, ACTION_REPORT, &data);
+zp_send(&ctx, ACTION_REPORT, &data, 1);
 
-// Emit void actions with zero payload
-zp_send_cmd(&ctx, ACTION_PING);
+// Emit void actions with zero payload (count = 0)
+zp_send(&ctx, ACTION_PING, NULL, 0);
 ```
 
 ### 5. Ingress Ingestion & Non-Blocking Polling (`zp_poll`)
 
-ZeroPack uses a pull-based, lock-free cursor design (`rx_head` / `rx_tail`). Lease contiguous space directly from the RX buffer (ideal for DMA or non-blocking socket/UART reads) and poll messages:
+ZeroPack uses a pull-based, lock-free cursor design (`head` / `tail`). Lease contiguous space directly from the buffer with `zp_buffer()` (ideal for DMA or non-blocking socket/UART reads) and poll messages:
 
 ```c
-// Ingest raw bytes from hardware or transport into the RX buffer:
-size_t received = uart_read_bytes(zp_rx_buf(&ctx), zp_rx_avail(&ctx));
-if (received > 0) {
-    ctx.rx_head += received;
+// Ingest raw bytes from hardware or transport into the buffer:
+size_t avail;
+uint8_t* dest = zp_buffer(&ctx, &avail);
+if (dest && avail > 0) {
+    size_t received = uart_read_bytes(dest, avail);
+    if (received > 0) {
+        ctx.head += received;
+    }
 }
 
 // Poll decoded messages in your event loop or consumer task:
@@ -191,11 +197,11 @@ ZeroPack includes a linear static memory pool with type-validated references:
 
 ```c
 // Store values, slices, and C-strings safely into the pool
-poolref_t ref_val = zp_pool_push_val(ctx, SensorReport, sample);
+poolref_t ref_val = zp_pool_push(ctx, SensorReport, &sample, 1);
 poolref_t ref_str = zp_pool_push_str(ctx, "Sensor OK");
 
 // Retrieve with strict compile-time casting and runtime type-tag verification
-SensorReport* report = zp_pool_get_typed(ctx, SensorReport, ref_val);
+SensorReport* report = zp_pool_get(ctx, SensorReport, ref_val, NULL);
 char* status_str = zp_pool_get_str(ctx, ref_str);
 ```
 

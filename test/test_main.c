@@ -128,8 +128,10 @@ static void test_setup(void) {
     s_ctx = (zp_ctx_t){
         .schema = &test_schema,
         .writev = test_writev,
-        ZP_BUFFER(rx, s_rx_buf),
-        ZP_BUFFER(pool, s_pool_buf),
+        .buf = s_rx_buf,
+        .cap = sizeof(s_rx_buf),
+        .pool = s_pool_buf,
+        .pool_cap = sizeof(s_pool_buf),
     };
     zp_init(&s_ctx);
 }
@@ -142,20 +144,20 @@ static bool test_schema_metadata(void) {
     test_setup();
 
     // Struct sizes & names
-    ASSERT_EQ(sizeof(sensor_t), zp_type_size(sensor_t));
-    ASSERT_STR_EQ("sensor_t", zp_type_name(sensor_t));
-    ASSERT_EQ(sizeof(coord_t), zp_type_size(coord_t));
-    ASSERT_STR_EQ("coord_t", zp_type_name(coord_t));
+    ASSERT_EQ(sizeof(sensor_t), zp_metaof(sensor_t)->size);
+    ASSERT_STR_EQ("sensor_t", zp_metaof(sensor_t)->name);
+    ASSERT_EQ(sizeof(coord_t), zp_metaof(coord_t)->size);
+    ASSERT_STR_EQ("coord_t", zp_metaof(coord_t)->name);
 
     // Field offsets match ABI
     ASSERT_EQ(
-        offsetof(sensor_t, sensor_id), zp_type_meta(sensor_t)->fields[0].offset
+        offsetof(sensor_t, sensor_id), zp_metaof(sensor_t)->fields[0].offset
     );
     ASSERT_EQ(
-        offsetof(sensor_t, temp_milli), zp_type_meta(sensor_t)->fields[1].offset
+        offsetof(sensor_t, temp_milli), zp_metaof(sensor_t)->fields[1].offset
     );
     ASSERT_EQ(
-        offsetof(sensor_t, is_active), zp_type_meta(sensor_t)->fields[2].offset
+        offsetof(sensor_t, is_active), zp_metaof(sensor_t)->fields[2].offset
     );
 
     // Actions count & wire names
@@ -184,7 +186,7 @@ static bool test_pool_strings(void) {
     ASSERT_STR_EQ(original, str);
 
     // Type checking: attempting to retrieve string as a struct returns NULL
-    sensor_t* wrong = zp_pool_get_typed(&s_ctx, sensor_t, ref);
+    sensor_t* wrong = zp_pool_get(&s_ctx, sensor_t, ref, NULL);
     ASSERT_NULL(wrong);
 
     // Check slot capacity and alignment (8-byte aligned)
@@ -203,23 +205,23 @@ static bool test_pool_values_and_mutation(void) {
         .is_active = true,
     };
 
-    poolref_t ref_s1 = zp_pool_push_val(&s_ctx, sensor_t, s1);
+    poolref_t ref_s1 = zp_pool_push(&s_ctx, sensor_t, &s1, 1);
     ASSERT_EQ(0, ref_s1);
 
     // Typed retrieval
-    sensor_t* got = zp_pool_get_typed(&s_ctx, sensor_t, ref_s1);
+    sensor_t* got = zp_pool_get(&s_ctx, sensor_t, ref_s1, NULL);
     ASSERT_NOT_NULL(got);
     ASSERT_EQ(42, got->sensor_id);
     ASSERT_EQ(25000, got->temp_milli);
     ASSERT_EQ(true, got->is_active);
 
     // Type mismatch check: coord_t is not sensor_t
-    coord_t* wrong_coord = zp_pool_get_typed(&s_ctx, coord_t, ref_s1);
+    coord_t* wrong_coord = zp_pool_get(&s_ctx, coord_t, ref_s1, NULL);
     ASSERT_NULL(wrong_coord);
 
     // In-place mutation
     got->temp_milli = 27500;
-    sensor_t* mutated = zp_pool_get_typed(&s_ctx, sensor_t, ref_s1);
+    sensor_t* mutated = zp_pool_get(&s_ctx, sensor_t, ref_s1, NULL);
     ASSERT_EQ(27500, mutated->temp_milli);
 
     return true;
@@ -229,11 +231,11 @@ static bool test_pool_slices_and_arrays(void) {
     test_setup();
 
     u32 raw_data[4] = {10, 20, 30, 40};
-    poolref_t ref_arr = zp_pool_push_arr(&s_ctx, u32, raw_data, 4);
+    poolref_t ref_arr = zp_pool_push(&s_ctx, u32, raw_data, 4);
     ASSERT_EQ(0, ref_arr);
 
     uint16_t out_count = 0;
-    u32* slice = zp_pool_get_slice(&s_ctx, u32, ref_arr, &out_count);
+    u32* slice = zp_pool_get(&s_ctx, u32, ref_arr, &out_count);
     ASSERT_NOT_NULL(slice);
     ASSERT_EQ(4, out_count);
     ASSERT_EQ(10, slice[0]);
@@ -242,7 +244,7 @@ static bool test_pool_slices_and_arrays(void) {
     ASSERT_EQ(40, slice[3]);
 
     // Type mismatch check: u16 slice instead of u32
-    u16* wrong_slice = zp_pool_get_slice(&s_ctx, u16, ref_arr, &out_count);
+    u16* wrong_slice = zp_pool_get(&s_ctx, u16, ref_arr, &out_count);
     ASSERT_NULL(wrong_slice);
 
     return true;
@@ -252,7 +254,7 @@ static bool test_pool_validation_and_bounds(void) {
     test_setup();
 
     sensor_t s = {.sensor_id = 1};
-    poolref_t ref = zp_pool_push_val(&s_ctx, sensor_t, s);
+    poolref_t ref = zp_pool_push(&s_ctx, sensor_t, &s, 1);
     ASSERT_EQ(0, ref);
 
     // Valid ref
@@ -267,7 +269,7 @@ static bool test_pool_validation_and_bounds(void) {
 
     // Overflow protection: requesting push larger than pool capacity
     uint8_t large_blob[600];
-    poolref_t fail_ref = zp_pool_push(&s_ctx, TYPE_ID_u8, large_blob, 600);
+    poolref_t fail_ref = zp_pool_push(&s_ctx, u8, large_blob, 600);
     ASSERT_EQ(0xFFFF, fail_ref);
 
     return true;
@@ -277,7 +279,7 @@ static bool test_pool_edit_and_reset(void) {
     test_setup();
 
     sensor_t s1 = {.sensor_id = 10, .temp_milli = 1000, .is_active = true};
-    poolref_t ref = zp_pool_push_val(&s_ctx, sensor_t, s1);
+    poolref_t ref = zp_pool_push(&s_ctx, sensor_t, &s1, 1);
     ASSERT_EQ(0, ref);
 
     // Valid edit
@@ -286,7 +288,7 @@ static bool test_pool_edit_and_reset(void) {
         zp_pool_edit(&s_ctx, ref, zp_type_id(&test_schema, sensor_t), &s2, 1);
     ASSERT_EQ(ZP_OK, st);
 
-    sensor_t* got = zp_pool_get_typed(&s_ctx, sensor_t, ref);
+    sensor_t* got = zp_pool_get(&s_ctx, sensor_t, ref, NULL);
     ASSERT_EQ(20, got->sensor_id);
     ASSERT_EQ(2000, got->temp_milli);
     ASSERT_EQ(false, got->is_active);
@@ -320,9 +322,9 @@ static bool test_rx_pipeline_and_dispatch(void) {
         .type_id = TYPE_ID_NONE,
         .count = 0,
     };
-    uint8_t* buf = zp_rx_buf(&s_ctx);
+    uint8_t* buf = zp_buffer(&s_ctx, NULL);
     memcpy(buf, &ping_hdr, sizeof(ping_hdr));
-    s_ctx.rx_head += sizeof(ping_hdr);
+    s_ctx.head += sizeof(ping_hdr);
 
     zp_msg_t msg;
     ASSERT(zp_poll(&s_ctx, &msg));
@@ -343,10 +345,10 @@ static bool test_rx_pipeline_and_dispatch(void) {
         .type_id = zp_type_id(&test_schema, sensor_t),
         .count = 1,
     };
-    buf = zp_rx_buf(&s_ctx);
+    buf = zp_buffer(&s_ctx, NULL);
     memcpy(buf, &sensor_hdr, sizeof(sensor_hdr));
     memcpy(buf + sizeof(sensor_hdr), &tx_sensor, sizeof(tx_sensor));
-    s_ctx.rx_head += sizeof(sensor_hdr) + sizeof(tx_sensor);
+    s_ctx.head += sizeof(sensor_hdr) + sizeof(tx_sensor);
 
     ASSERT(zp_poll(&s_ctx, &msg));
     ASSERT_EQ(msg.action, ACTION_UPDATE_DATA);
@@ -382,10 +384,10 @@ static bool test_rx_fragmentation(void) {
 
     // Deliver byte-by-byte into the RX pipeline
     for (size_t i = 0; i < sizeof(packet); i++) {
-        uint8_t* buf = zp_rx_buf(&s_ctx);
+        uint8_t* buf = zp_buffer(&s_ctx, NULL);
         ASSERT_NOT_NULL(buf);
         buf[0] = packet[i];
-        s_ctx.rx_head += 1;
+        s_ctx.head += 1;
         if (i < sizeof(packet) - 1) {
             zp_msg_t msg;
             ASSERT(!zp_poll(&s_ctx, &msg));
@@ -423,10 +425,10 @@ static bool test_boolean_normalization(void) {
         .count = 1,
     };
 
-    uint8_t* buf = zp_rx_buf(&s_ctx);
+    uint8_t* buf = zp_buffer(&s_ctx, NULL);
     memcpy(buf, &hdr, sizeof(hdr));
     memcpy(buf + sizeof(hdr), &tx_sensor, sizeof(tx_sensor));
-    s_ctx.rx_head += sizeof(hdr) + sizeof(tx_sensor);
+    s_ctx.head += sizeof(hdr) + sizeof(tx_sensor);
 
     zp_msg_t msg;
     ASSERT(zp_poll(&s_ctx, &msg));
@@ -450,16 +452,16 @@ static bool test_internal_pool_sys_actions(void) {
         .type_id = TYPE_ID_bool,
         .count = 1,
     };
-    uint8_t* buf = zp_rx_buf(&s_ctx);
+    uint8_t* buf = zp_buffer(&s_ctx, NULL);
     memcpy(buf, &store_hdr, sizeof(store_hdr));
     memcpy(buf + sizeof(store_hdr), &raw_bool, sizeof(raw_bool));
-    s_ctx.rx_head += sizeof(store_hdr) + sizeof(raw_bool);
+    s_ctx.head += sizeof(store_hdr) + sizeof(raw_bool);
 
     zp_msg_t msg;
     ASSERT(!zp_poll(&s_ctx, &msg));
 
     ASSERT_EQ(true, s_ctx.pool_len > 0);
-    bool* b_val = zp_pool_get_typed(&s_ctx, bool, 0);
+    bool* b_val = zp_pool_get(&s_ctx, bool, 0, NULL);
     ASSERT_NOT_NULL(b_val);
     ASSERT_EQ(true, *b_val);
 
@@ -479,12 +481,12 @@ static bool test_internal_pool_sys_actions(void) {
         .ref = 0,
         .val = 0x00,
     };
-    buf = zp_rx_buf(&s_ctx);
+    buf = zp_buffer(&s_ctx, NULL);
     memcpy(buf, &edit_pkt, sizeof(edit_pkt));
-    s_ctx.rx_head += sizeof(edit_pkt);
+    s_ctx.head += sizeof(edit_pkt);
     ASSERT(!zp_poll(&s_ctx, &msg));
 
-    b_val = zp_pool_get_typed(&s_ctx, bool, 0);
+    b_val = zp_pool_get(&s_ctx, bool, 0, NULL);
     ASSERT_NOT_NULL(b_val);
     ASSERT_EQ(false, *b_val);
 
@@ -494,9 +496,9 @@ static bool test_internal_pool_sys_actions(void) {
         .type_id = TYPE_ID_NONE,
         .count = 0,
     };
-    buf = zp_rx_buf(&s_ctx);
+    buf = zp_buffer(&s_ctx, NULL);
     memcpy(buf, &reset_hdr, sizeof(reset_hdr));
-    s_ctx.rx_head += sizeof(reset_hdr);
+    s_ctx.head += sizeof(reset_hdr);
     ASSERT(!zp_poll(&s_ctx, &msg));
 
     // Pool must be cleanly reset
@@ -510,22 +512,40 @@ static bool test_uninitialized_guard(void) {
 
     // Any operation on null/empty context must be safely rejected without crashing
     ASSERT_EQ(-1, zp_send_raw(&null_ctx, 1, 1, 0, NULL, 0));
-    ASSERT_EQ(0xFFFF, zp_pool_push(&null_ctx, TYPE_ID_u8, "test", 4));
+    ASSERT_EQ(-1, zp_send(&null_ctx, 0, NULL, 0));
+    size_t avail = 99;
+    ASSERT_NULL(zp_buffer(&null_ctx, &avail));
+    ASSERT_EQ(0, avail);
+    ASSERT_NULL(zp_buffer(NULL, &avail));
+    ASSERT_EQ(0, avail);
+    ASSERT_EQ(0xFFFF, zp_pool_push(&null_ctx, u8, "test", 4));
     ASSERT_EQ(
         ZP_INVALID_ACTION, zp_pool_edit(&null_ctx, 0, TYPE_ID_u8, "test", 4)
     );
     ASSERT_EQ(false, zp_pool_is_valid(&null_ctx, 0));
     ASSERT_EQ(false, zp_poll(&null_ctx, NULL));
 
+    // Reject out-of-bounds actions
+    ASSERT_EQ(-1, zp_send(&s_ctx, 99, NULL, 0));
+
+    // Sending void action via zp_send normalizes count to 0 even if passed > 0
+    s_tx_capture_len = 0;
+    ASSERT_EQ(4, zp_send(&s_ctx, ACTION_PING, NULL, 5));
+    const zp_header_t* sent_hdr = (const zp_header_t*)s_tx_capture;
+    ASSERT_EQ(ACTION_PING, sent_hdr->action);
+    ASSERT_EQ(0, sent_hdr->count);
+
     zp_ctx_t uninit_ctx = {
         .schema = &test_schema,
         .writev = test_writev,
-        ZP_BUFFER(rx, s_rx_buf),
-        ZP_BUFFER(pool, s_pool_buf),
+        .buf = s_rx_buf,
+        .cap = sizeof(s_rx_buf),
+        .pool = s_pool_buf,
+        .pool_cap = sizeof(s_pool_buf),
     };
     // Calling zp_init activates the context
     ASSERT_EQ(&uninit_ctx, zp_init(&uninit_ctx));
-    ASSERT(uninit_ctx.rx_buf != NULL);
+    ASSERT(uninit_ctx.buf != NULL);
 
     return true;
 }
@@ -533,15 +553,15 @@ static bool test_uninitialized_guard(void) {
 static bool test_rx_compaction_on_boundary(void) {
     test_setup();
 
-    // 1. Consume a ping packet so rx_tail > 0
+    // 1. Consume a ping packet so tail > 0
     zp_header_t ping_hdr = {
         .action = ACTION_PING,
         .type_id = TYPE_ID_NONE,
         .count = 0,
     };
-    uint8_t* buf = zp_rx_buf(&s_ctx);
+    uint8_t* buf = zp_buffer(&s_ctx, NULL);
     memcpy(buf, &ping_hdr, sizeof(ping_hdr));
-    s_ctx.rx_head += sizeof(ping_hdr);
+    s_ctx.head += sizeof(ping_hdr);
 
     zp_msg_t msg;
     ASSERT(zp_poll(&s_ctx, &msg));
@@ -558,27 +578,27 @@ static bool test_rx_compaction_on_boundary(void) {
     memcpy(pkt, &s_hdr, sizeof(s_hdr));
     memcpy(pkt + sizeof(s_hdr), &s, sizeof(s));
 
-    // Place only part1 (6 bytes) at the very end of rx_buf
+    // Place only part1 (6 bytes) at the very end of buf
     size_t part1_len = 6;
-    s_ctx.rx_tail = s_ctx.rx_cap - part1_len;
-    s_ctx.rx_head = s_ctx.rx_cap;  // hits the ceiling!
-    memcpy(s_ctx.rx_buf + s_ctx.rx_tail, pkt, part1_len);
+    s_ctx.tail = s_ctx.cap - part1_len;
+    s_ctx.head = s_ctx.cap;  // hits the ceiling!
+    memcpy(s_ctx.buf + s_ctx.tail, pkt, part1_len);
 
-    // 3. zp_poll detects incomplete packet and boundary collision, compacts to
-    // 0
+    // 3. zp_poll detects incomplete packet and boundary collision, compacts to 0
     ASSERT(!zp_poll(&s_ctx, &msg));
-    ASSERT_EQ(0, s_ctx.rx_tail);
-    ASSERT_EQ(part1_len, s_ctx.rx_head);
+    ASSERT_EQ(0, s_ctx.tail);
+    ASSERT_EQ(part1_len, s_ctx.head);
 
-    // 4. Now zp_rx_avail has free space
-    size_t avail = zp_rx_avail(&s_ctx);
+    // 4. Now zp_buffer has free space
+    size_t avail = 0;
+    uint8_t* rx_dest = zp_buffer(&s_ctx, &avail);
     ASSERT(avail > sizeof(pkt));
+    ASSERT_NOT_NULL(rx_dest);
 
     // 5. Append part2 into the freed space
     size_t part2_len = sizeof(pkt) - part1_len;
-    uint8_t* rx_dest = zp_rx_buf(&s_ctx);
     memcpy(rx_dest, pkt + part1_len, part2_len);
-    s_ctx.rx_head += part2_len;
+    s_ctx.head += part2_len;
 
     // 6. zp_poll successfully decodes the complete packet
     ASSERT(zp_poll(&s_ctx, &msg));

@@ -22,42 +22,30 @@ zp_ssize_t zp_send_raw(
     };
 
     int iovcnt = (payload != NULL && size > 0) ? 2 : 1;
-
-    zp_ssize_t ret = ctx->writev(ctx, iov, iovcnt);
-    return ret;
-}
-
-zp_ssize_t zp_send_arr(
-    zp_ctx_t* ctx,
-    uint8_t action,
-    const void* payload,
-    uint16_t count
-) {
-    uint8_t type_id = TYPE_ID_NONE;
-    size_t size = 0;
-    if (ctx && ctx->schema && action < ctx->schema->action_count) {
-        const zp_type_meta_t* type = ctx->schema->actions[action].type;
-        if (type) {
-            type_id = zp_get_meta_id(ctx->schema, type);
-            size = (size_t)count * type->size;
-        }
-    }
-    return zp_send_raw(ctx, action, type_id, count, payload, size);
+    return ctx->writev(ctx, iov, iovcnt);
 }
 
 zp_ssize_t zp_send(
     zp_ctx_t* ctx,
     uint8_t action,
-    const void* payload
+    const void* payload,
+    uint16_t count
 ) {
-    return zp_send_arr(ctx, action, payload, 1);
-}
+    if (!ctx || !ctx->schema || action >= ctx->schema->action_count) {
+        return -1;
+    }
 
-zp_ssize_t zp_send_cmd(
-    zp_ctx_t* ctx,
-    uint8_t action
-) {
-    return zp_send_raw(ctx, action, TYPE_ID_NONE, 0, NULL, 0);
+    uint8_t type_id = TYPE_ID_NONE;
+    size_t size = 0;
+    const zp_type_meta_t* type = ctx->schema->actions[action].type;
+    if (type) {
+        type_id = zp_get_meta_id(ctx->schema, type);
+        size = (size_t)count * type->size;
+    } else {
+        count = 0;
+    }
+
+    return zp_send_raw(ctx, action, type_id, count, payload, size);
 }
 
 void zp_emit_log(

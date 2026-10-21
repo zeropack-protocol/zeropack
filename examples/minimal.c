@@ -33,15 +33,15 @@ static size_t s_pending_rx_len = 0;
 static zp_ssize_t loopback_writev(
     zp_ctx_t* ctx, const zp_iovec_t* iov, int iovcnt
 ) {
-    uint8_t* rx_buf = zp_rx_buf(ctx);
-    size_t avail = zp_rx_avail(ctx);
+    size_t avail = 0;
+    uint8_t* rx_dest = zp_buffer(ctx, &avail);
 
     zp_ssize_t written = 0;
     for (int i = 0; i < iovcnt; i++) {
-        if (s_pending_rx_len + iov[i].len > avail) {
+        if (!rx_dest || s_pending_rx_len + iov[i].len > avail) {
             return -1;  // Overflow
         }
-        memcpy(rx_buf + s_pending_rx_len, iov[i].buf, iov[i].len);
+        memcpy(rx_dest + s_pending_rx_len, iov[i].buf, iov[i].len);
         s_pending_rx_len += iov[i].len;
         written += (zp_ssize_t)iov[i].len;
     }
@@ -54,7 +54,7 @@ static void flush_bus_to_receiver(zp_ctx_t* ctx, const char* label) {
         s_pending_rx_len,
         label
     );
-    ctx->rx_head += s_pending_rx_len;
+    ctx->head += s_pending_rx_len;
     s_pending_rx_len = 0;
 
     zp_msg_t msg;
@@ -93,14 +93,16 @@ int main(void) {
     zp_ctx_t ctx = {
         .schema = &example_schema,
         .writev = loopback_writev,
-        ZP_BUFFER(rx, s_rx),
-        ZP_BUFFER(pool, s_pool),
+        .buf = s_rx,
+        .cap = sizeof(s_rx),
+        .pool = s_pool,
+        .pool_cap = sizeof(s_pool),
     };
     zp_init(&ctx);
 
     // Emit a void action (no payload)
     printf("\n[Step 1] Emitting ACTION_PING...");
-    zp_send_cmd(&ctx, ACTION_PING);
+    zp_send(&ctx, ACTION_PING, NULL, 0);
     flush_bus_to_receiver(&ctx, "ACTION_PING");
 
     // Emit a structured action
@@ -110,7 +112,7 @@ int main(void) {
         .timestamp = 42000,
     };
     printf("\n[Step 2] Emitting ACTION_REPORT (SensorReport payload)...");
-    zp_send(&ctx, ACTION_REPORT, &sample);
+    zp_send(&ctx, ACTION_REPORT, &sample, 1);
     flush_bus_to_receiver(&ctx, "ACTION_REPORT");
 
     // Send binary handshake schema

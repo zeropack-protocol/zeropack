@@ -44,22 +44,18 @@ extern size_t strlen(const char* s);
         FieldsMacro(StructName, _ZP_MAKE_FIELD, _ZP_MAKE_ARRAY) \
     } StructName;
 
-#define _ZP_DECLARE_ACTIONS(ActionsMacro)                                     \
-    enum {                                                                    \
-        ActionsMacro(_ZP_GEN_ACTION_ID, _ZP_GEN_ACTION_ID, _ZP_GEN_ACTION_ID) \
-    };
 
 // type metadata
 
 #define _ZP_FIELD_META(_struct, _type, _name) \
     {.name = #_name,                          \
-     .type = &__zp_meta_##_type,              \
+     .type = zp_metaof(_type),                 \
      .offset = offsetof(_struct, _name),      \
      .length = 0},
 
 #define _ZP_ARRAY_META(_struct, _type, _name, _len) \
     {.name = #_name,                                \
-     .type = &__zp_meta_##_type,                    \
+     .type = zp_metaof(_type),                       \
      .offset = offsetof(_struct, _name),            \
      .length = _len},
 
@@ -75,43 +71,38 @@ extern size_t strlen(const char* s);
                  sizeof(__zp_fields_##StructName[0]),           \
     };
 
-#define _ZP_REF_TYPE_META(StructName, ...) &__zp_meta_##StructName,
+#define _ZP_REF_TYPE_META(StructName, ...) zp_metaof(StructName),
 
 // action metadata
+
+#define _ZP_ARG2(_1, _2, NAME, ...) NAME
+#define _ZP_ARG3(_1, _2, _3, NAME, ...) NAME
 
 #define _ZP_ACTION_V_1(_name) {.name = #_name, .type = NULL, .is_array = 0},
 #define _ZP_ACTION_V_2(_name, _alias) \
     {.name = _alias, .type = NULL, .is_array = 0},
-#define _ZP_GET_ACTION_V(_1, _2, NAME, ...) NAME
-#define _ZP_ACTION_V(...)                                             \
-    _ZP_GET_ACTION_V(__VA_ARGS__, _ZP_ACTION_V_2, _ZP_ACTION_V_1, 0)( \
-        __VA_ARGS__                                                   \
+#define _ZP_ACTION_V(...)                                         \
+    _ZP_ARG2(__VA_ARGS__, _ZP_ACTION_V_2, _ZP_ACTION_V_1, 0)(     \
+        __VA_ARGS__                                               \
     )
 
 #define _ZP_ACTION_T_2(_name, _type) \
-    {.name = #_name, .type = &__zp_meta_##_type, .is_array = 0},
+    {.name = #_name, .type = zp_metaof(_type), .is_array = 0},
 #define _ZP_ACTION_T_3(_name, _type, _alias) \
-    {.name = _alias, .type = &__zp_meta_##_type, .is_array = 0},
-#define _ZP_GET_ACTION_T(_1, _2, _3, NAME, ...) NAME
-#define _ZP_ACTION_T(...)                                             \
-    _ZP_GET_ACTION_T(__VA_ARGS__, _ZP_ACTION_T_3, _ZP_ACTION_T_2, 0)( \
-        __VA_ARGS__                                                   \
+    {.name = _alias, .type = zp_metaof(_type), .is_array = 0},
+#define _ZP_ACTION_T(...)                                         \
+    _ZP_ARG3(__VA_ARGS__, _ZP_ACTION_T_3, _ZP_ACTION_T_2, 0)(     \
+        __VA_ARGS__                                               \
     )
 
 #define _ZP_ACTION_A_2(_name, _type) \
-    {.name = #_name, .type = &__zp_meta_##_type, .is_array = 1},
+    {.name = #_name, .type = zp_metaof(_type), .is_array = 1},
 #define _ZP_ACTION_A_3(_name, _type, _alias) \
-    {.name = _alias, .type = &__zp_meta_##_type, .is_array = 1},
-#define _ZP_GET_ACTION_A(_1, _2, _3, NAME, ...) NAME
-#define _ZP_ACTION_A(...)                                             \
-    _ZP_GET_ACTION_A(__VA_ARGS__, _ZP_ACTION_A_3, _ZP_ACTION_A_2, 0)( \
-        __VA_ARGS__                                                   \
+    {.name = _alias, .type = zp_metaof(_type), .is_array = 1},
+#define _ZP_ACTION_A(...)                                         \
+    _ZP_ARG3(__VA_ARGS__, _ZP_ACTION_A_3, _ZP_ACTION_A_2, 0)(     \
+        __VA_ARGS__                                               \
     )
 
 #define _ZP_GEN_ACTION_ID_IMPL(name, ...) name,
 #define _ZP_GEN_ACTION_ID(...) _ZP_GEN_ACTION_ID_IMPL(__VA_ARGS__, 0)
-
-// pool helper
-
-#define _zp_pool_get(ctx, ref) \
-    ((void*)((ctx)->pool_buf + (ref) + sizeof(zp_pool_slot_t)))

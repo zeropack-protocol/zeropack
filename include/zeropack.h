@@ -75,7 +75,6 @@ typedef enum {
     ZP_OK = 0,
     ZP_BUFFER_OVERFLOW,
     ZP_INVALID_ACTION,
-    ZP_NO_HOOK,
     ZP_POOL_FULL,
     ZP_POOL_READONLY,
     ZP_POOL_SLOT_STORED,
@@ -113,9 +112,7 @@ ZP_PRIMITIVES(_ZP_DECL_PRIM_META)
 #undef _ZP_DECL_PRIM_META
 #define __zp_meta__Bool __zp_meta_bool
 
-#define zp_type_meta(T) (&__zp_meta_##T)
-#define zp_type_name(T) (__zp_meta_##T.name)
-#define zp_type_size(T) (__zp_meta_##T.size)
+#define zp_metaof(T) (&__zp_meta_##T)
 
 typedef struct {
     const char* name;
@@ -135,9 +132,8 @@ const zp_type_meta_t* zp_get_type_meta(
     const zp_schema_t* schema, uint8_t type_id
 );
 size_t zp_get_type_size(const zp_schema_t* schema, uint8_t type_id);
-const char* zp_get_type_name(const zp_schema_t* schema, uint8_t type_id);
 
-#define zp_type_id(schema, T) zp_get_meta_id((schema), zp_type_meta(T))
+#define zp_type_id(schema, T) zp_get_meta_id((schema), zp_metaof(T))
 
 // Context & configuration =====================================================
 typedef struct zp_ctx zp_ctx_t;
@@ -148,22 +144,19 @@ typedef zp_ssize_t (*zp_writev_fn_t)(
 struct zp_ctx {
     const zp_schema_t* schema;
     zp_writev_fn_t writev;
-    uint8_t* rx_buf;
-    uint8_t* pool_buf;
+    uint8_t* buf;
+    uint8_t* pool;
     void* transport;
 
-    size_t rx_cap;
-    size_t rx_head;  // writes to buffer
-    size_t rx_tail;  // reads the buffer
+    size_t cap;
+    size_t head;  // writes to buffer
+    size_t tail;  // reads the buffer
 
     uint16_t pool_cap;
     uint16_t pool_len;
 };
 
-#define ZP_BUFFER(n, s) .n##_buf = (uint8_t*)(s), .n##_cap = sizeof(s)
-
-size_t zp_rx_avail(zp_ctx_t* ctx);
-uint8_t* zp_rx_buf(zp_ctx_t* ctx);
+uint8_t* zp_buffer(zp_ctx_t* ctx, size_t* out_avail);
 
 // Memory pool =================================================================
 typedef enum {
@@ -188,13 +181,13 @@ _Static_assert(
     ZP_ALIGN8(sizeof(zp_pool_slot_t) + (data_len))
 
 #define zp_pool_avail(ctx) ((size_t)(ctx)->pool_cap - (size_t)(ctx)->pool_len)
-#define zp_pool_slot(ctx, ref) ((zp_pool_slot_t*)((ctx)->pool_buf + (ref)))
+#define zp_pool_slot(ctx, ref) ((zp_pool_slot_t*)((ctx)->pool + (ref)))
 
 bool zp_pool_is_valid(const zp_ctx_t* ctx, poolref_t ref);
 void* zp_pool_get_checked(
     const zp_ctx_t* ctx, uint8_t type, poolref_t ref, uint16_t* out_count
 );
-poolref_t zp_pool_push(
+poolref_t zp_pool_push_raw(
     zp_ctx_t* ctx, uint8_t type_id, const void* data, uint16_t count
 );
 zp_status_t zp_pool_edit(
@@ -206,12 +199,7 @@ zp_status_t zp_pool_edit(
 );
 void zp_pool_reset(zp_ctx_t* ctx);
 
-#define zp_pool_get_typed(ctx, type, ref)                   \
-    ((type*)zp_pool_get_checked(                            \
-        (ctx), zp_type_id((ctx)->schema, type), (ref), NULL \
-    ))
-
-#define zp_pool_get_slice(ctx, type, ref, out_count)               \
+#define zp_pool_get(ctx, type, ref, out_count)                     \
     ((type*)zp_pool_get_checked(                                   \
         (ctx), zp_type_id((ctx)->schema, type), (ref), (out_count) \
     ))
@@ -219,14 +207,11 @@ void zp_pool_reset(zp_ctx_t* ctx);
 #define zp_pool_get_str(ctx, ref) \
     ((char*)zp_pool_get_checked((ctx), TYPE_ID_u8, (ref), NULL))
 
-#define zp_pool_push_val(ctx, type, v) \
-    zp_pool_push((ctx), zp_type_id((ctx)->schema, type), &(v), 1)
+#define zp_pool_push(ctx, type, ptr, count) \
+    zp_pool_push_raw((ctx), zp_type_id((ctx)->schema, type), (ptr), (count))
 
 #define zp_pool_push_str(ctx, s) \
-    zp_pool_push((ctx), TYPE_ID_u8, (s), (uint16_t)(zp_strlen(s) + 1))
-
-#define zp_pool_push_arr(ctx, type, ptr, count) \
-    zp_pool_push((ctx), zp_type_id((ctx)->schema, type), (ptr), (count))
+    zp_pool_push_raw((ctx), TYPE_ID_u8, (s), (uint16_t)(zp_strlen(s) + 1))
 
 // Core runtime ================================================================
 
@@ -251,10 +236,11 @@ zp_ssize_t zp_send_raw(
     const void* payload,
     size_t size
 );
-zp_ssize_t zp_send_cmd(zp_ctx_t* ctx, uint8_t action);
-zp_ssize_t zp_send(zp_ctx_t* ctx, uint8_t action, const void* payload);
-zp_ssize_t zp_send_arr(
-    zp_ctx_t* ctx, uint8_t action, const void* payload, uint16_t count
+zp_ssize_t zp_send(
+    zp_ctx_t* ctx,
+    uint8_t action,
+    const void* payload,
+    uint16_t count
 );
 
 // Schema & action macros ======================================================
@@ -264,7 +250,9 @@ zp_ssize_t zp_send_arr(
     TypesMacro(_ZP_MAKE_TYPE_META)
 
 #define ZP_SCHEMA(Name, TypesMacro, ActionsMacro)                           \
-    _ZP_DECLARE_ACTIONS(ActionsMacro)                                       \
+    enum {                                                                  \
+        ActionsMacro(_ZP_GEN_ACTION_ID, _ZP_GEN_ACTION_ID, _ZP_GEN_ACTION_ID)\
+    };                                                                      \
     static const zp_action_meta_t Name##_actions[] = {                      \
         ActionsMacro(_ZP_ACTION_V, _ZP_ACTION_T, _ZP_ACTION_A)              \
     };                                                                      \

@@ -29,7 +29,7 @@ const zp_type_meta_t* zp_get_type_meta(
 ) {
 #define SW_PRIM(p)    \
     case TYPE_ID_##p: \
-        return &__zp_meta_##p;
+        return zp_metaof(p);
 
     if (type_id == 0) return NULL;
     if (type_id < TYPE_ID_START) {
@@ -50,10 +50,4 @@ const zp_type_meta_t* zp_get_type_meta(
 size_t zp_get_type_size(const zp_schema_t* schema, uint8_t type_id) {
     const zp_type_meta_t* meta = zp_get_type_meta(schema, type_id);
     return meta ? meta->size : 0;
-}
-
-const char* zp_get_type_name(const zp_schema_t* schema, uint8_t type_id) {
-    if (type_id == 0) return "none";
-    const zp_type_meta_t* meta = zp_get_type_meta(schema, type_id);
-    return meta ? meta->name : "unknown";
 }

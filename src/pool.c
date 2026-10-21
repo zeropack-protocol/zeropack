@@ -1,7 +1,7 @@
 #include "zeropack.h"
 
 bool zp_pool_is_valid(const zp_ctx_t* ctx, poolref_t ref) {
-    if (!ctx || !ctx->pool_buf) return false;
+    if (!ctx || !ctx->pool) return false;
     if ((ref & 7) != 0) return false;
 
     size_t offset = 0;
@@ -31,13 +31,13 @@ void* zp_pool_get_checked(
     if (slot->type_id != type_id) return NULL;
 
     if (out_count) *out_count = slot->count;
-    return _zp_pool_get(ctx, ref);
+    return (void*)(slot + 1);
 }
 
-poolref_t zp_pool_push(
+poolref_t zp_pool_push_raw(
     zp_ctx_t* ctx, uint8_t type_id, const void* data, uint16_t count
 ) {
-    if (!ctx || !ctx->pool_buf || ctx->pool_cap == 0 || !data || count == 0) {
+    if (!ctx || !ctx->pool || ctx->pool_cap == 0 || !data || count == 0) {
         return 0xFFFF;
     }
 
@@ -56,16 +56,14 @@ poolref_t zp_pool_push(
         return 0xFFFF;
     }
 
-    zp_pool_slot_t* slot = (zp_pool_slot_t*)(ctx->pool_buf + ctx->pool_len);
+    zp_pool_slot_t* slot = (zp_pool_slot_t*)(ctx->pool + ctx->pool_len);
     slot->type_id = type_id;
     slot->flags = ZP_POOL_FLAG_NONE;
     slot->count = count;
     slot->cap = (uint16_t)(total_slot - sizeof(zp_pool_slot_t));
 
     poolref_t ref = (poolref_t)ctx->pool_len;
-    zp_memcpy(
-        ctx->pool_buf + ctx->pool_len + sizeof(zp_pool_slot_t), data, total_len
-    );
+    zp_memcpy(slot + 1, data, total_len);
 
     ctx->pool_len += total_slot;
 
@@ -79,7 +77,7 @@ zp_status_t zp_pool_edit(
     const void* data,
     uint16_t count
 ) {
-    if (!ctx || !ctx->pool_buf || ctx->pool_cap == 0 || !data || count == 0) {
+    if (!ctx || !ctx->pool || ctx->pool_cap == 0 || !data || count == 0) {
         return ZP_INVALID_ACTION;
     }
 
@@ -103,7 +101,7 @@ zp_status_t zp_pool_edit(
     size_t data_len = type_size * (size_t)count;
     slot->count = count;
 
-    zp_memcpy(ctx->pool_buf + ref + sizeof(zp_pool_slot_t), data, data_len);
+    zp_memcpy(slot + 1, data, data_len);
 
     return ZP_OK;
 }
