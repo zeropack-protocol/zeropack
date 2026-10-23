@@ -1,7 +1,7 @@
 #include "zeropack.h"
 
 bool zp_pool_is_valid(const zp_ctx_t* ctx, poolref_t ref) {
-    if (!ctx || !ctx->pool.data) return false;
+    if (!ctx || !ctx->pool.data || ctx->pool.head > ctx->pool.cap) return false;
     if ((ref & 7) != 0) return false;
 
     size_t offset = 0;

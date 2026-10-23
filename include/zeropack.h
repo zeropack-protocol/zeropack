@@ -179,7 +179,8 @@ _Static_assert(
 #define ZP_SLOT_TOTAL_SIZE(data_len) \
     ZP_ALIGN8(sizeof(zp_pool_slot_t) + (data_len))
 
-#define zp_pool_avail(ctx) ((ctx)->pool.cap - (ctx)->pool.head)
+#define zp_pool_avail(ctx) \
+    ((ctx)->pool.head < (ctx)->pool.cap ? (ctx)->pool.cap - (ctx)->pool.head : 0)
 #define zp_pool_slot(ctx, ref) ((zp_pool_slot_t*)((ctx)->pool.data + (ref)))
 
 bool zp_pool_is_valid(const zp_ctx_t* ctx, poolref_t ref);
@@ -203,8 +204,11 @@ void zp_pool_reset(zp_ctx_t* ctx);
         (ctx), zp_type_id((ctx)->schema, type), (ref), (out_count) \
     ))
 
-#define zp_pool_get_str(ctx, ref) \
-    ((char*)zp_pool_get_checked((ctx), TYPE_ID_u8, (ref), NULL))
+static inline char* zp_pool_get_str(const zp_ctx_t* ctx, poolref_t ref) {
+    uint16_t count = 0;
+    char* str = (char*)zp_pool_get_checked(ctx, TYPE_ID_u8, ref, &count);
+    return (str && count > 0 && str[count - 1] == '\0') ? str : NULL;
+}
 
 #define zp_pool_push(ctx, type, ptr, count) \
     zp_pool_push_raw((ctx), zp_type_id((ctx)->schema, type), (ptr), (count))

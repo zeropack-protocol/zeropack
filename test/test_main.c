@@ -428,34 +428,28 @@ static bool test_rx_fragmentation(void) {
 static bool test_boolean_normalization(void) {
     test_setup();
 
-    // Set non-standard boolean value (e.g. 0x42 instead of 0 or 1)
-    sensor_t tx_sensor = {
-        .sensor_id = 77,
-        .temp_milli = 100,
-        .is_active = false,
-    };
-    uint8_t* raw_bytes = (uint8_t*)&tx_sensor;
-    raw_bytes[offsetof(sensor_t, is_active)] = 0x5A;  // dirty non-zero boolean
-
+    // Send a dirty boolean (0x5A instead of 0 or 1) via TYPE_ID_bool to the pool
+    uint8_t dirty_bool = 0x5A;
     zp_header_t hdr = {
-        .action = ACTION_UPDATE_DATA,
-        .type_id = zp_type_id(&test_schema, sensor_t),
+        .action = ZP_SYS_ACTION_POOL_STORE,
+        .type_id = TYPE_ID_bool,
         .count = 1,
     };
 
     uint8_t* buf = zp_buffer(&s_ctx, NULL);
     memcpy(buf, &hdr, sizeof(hdr));
-    memcpy(buf + sizeof(hdr), &tx_sensor, sizeof(tx_sensor));
-    s_ctx.buf.head += sizeof(hdr) + sizeof(tx_sensor);
+    memcpy(buf + sizeof(hdr), &dirty_bool, sizeof(dirty_bool));
+    zp_commit(&s_ctx, sizeof(hdr) + sizeof(dirty_bool));
 
     zp_msg_t msg;
-    ASSERT(zp_recv(&s_ctx, &msg));
-    const sensor_t* rx_sensor = (const sensor_t*)msg.payload;
-    ASSERT_NOT_NULL(rx_sensor);
+    ASSERT(!zp_recv(&s_ctx, &msg));
+
+    bool* b = zp_pool_get(&s_ctx, bool, 0, NULL);
+    ASSERT_NOT_NULL(b);
 
     // Protocol must normalize boolean to exactly 1 (true)
-    ASSERT_EQ(true, rx_sensor->is_active);
-    ASSERT_EQ(1, (int)rx_sensor->is_active);
+    ASSERT_EQ(true, *b);
+    ASSERT_EQ(1, (int)*b);
 
     return true;
 }
@@ -630,6 +624,37 @@ static bool test_rx_compaction_on_boundary(void) {
     return true;
 }
 
+static bool test_security_pool_and_handshake(void) {
+    test_setup();
+
+    // 1. Handshake with NULL pool data must not crash
+    zp_ctx_t no_pool_ctx = {
+        .schema = &test_schema,
+        .writev = test_writev,
+        .buf = {.data = s_rx_buf, .cap = sizeof(s_rx_buf)},
+        .pool = {.data = NULL, .cap = 0},
+    };
+    ASSERT_NOT_NULL(zp_init(&no_pool_ctx));
+    s_tx_capture_len = 0;
+    zp_send_handshake(&no_pool_ctx);
+    ASSERT(s_tx_capture_len > 0);
+
+    // 2. Raw u8 bytes without NUL terminator must be rejected by
+    // zp_pool_get_str
+    uint8_t raw_bytes[] = {'A', 'B', 'C'};
+    poolref_t raw_ref =
+        zp_pool_push_raw(&s_ctx, TYPE_ID_u8, raw_bytes, sizeof(raw_bytes));
+    ASSERT(raw_ref != 0xFFFF);
+    ASSERT_NULL(zp_pool_get_str(&s_ctx, raw_ref));
+
+    // 3. Defensive check against corrupted head > cap in pool
+    s_ctx.pool.head = s_ctx.pool.cap + 8;
+    ASSERT(!zp_pool_is_valid(&s_ctx, 0));
+    ASSERT_EQ(0xFFFF, zp_pool_push_raw(&s_ctx, TYPE_ID_u8, raw_bytes, 1));
+
+    return true;
+}
+
 // =============================================================================
 // Main Runner
 // =============================================================================
@@ -649,6 +674,7 @@ int main(void) {
     RUN_TEST(test_internal_pool_sys_actions);
     RUN_TEST(test_uninitialized_guard);
     RUN_TEST(test_rx_compaction_on_boundary);
+    RUN_TEST(test_security_pool_and_handshake);
 
     TEST_SUITE_END();
 }
