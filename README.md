@@ -73,9 +73,13 @@ When negotiating schemas dynamically, the self-describing handshake frame begins
 
 ### 1. Define Types and Actions
 
-Declare your application schema using standard C macros. Actions support optional wire aliases for protocol compatibility:
+Declare your application schema using standard C macros. Actions automatically generate enumeration constants and support optional wire aliases for protocol compatibility.
+
+In your schema header:
 
 ```c
+// schema.h
+#pragma once
 #include "zeropack.h"
 
 // Define custom structs and their fields
@@ -94,11 +98,17 @@ Declare your application schema using standard C macros. Actions support optiona
     V(ACTION_PONG)                         \
     T(ACTION_REPORT, SensorReport, "WIRE_REPORT")
 
-// Declare struct layouts, metadata, and action IDs
-ZP_DECLARE(APP_TYPES, APP_ACTIONS)
-
-// Generate runtime schema metadata
+// Declare struct layouts, type metadata, and schema externs
+ZP_TYPES(APP_TYPES)
 ZP_SCHEMA(app_schema, APP_TYPES, APP_ACTIONS)
+```
+
+In exactly one source file per schema, define `ZP_IMPLEMENTATION` to instantiate the metadata definitions:
+
+```c
+// schema.c
+#define ZP_IMPLEMENTATION
+#include "schema.h"
 ```
 
 ### 2. Implement Transport
@@ -155,16 +165,16 @@ zp_send(&ctx, ACTION_PING, NULL, 0);
 
 ### 5. Ingress Ingestion & Non-Blocking Reception (`zp_recv`)
 
-ZeroPack uses a pull-based, lock-free cursor design (`head` / `tail`). Lease contiguous space directly from the buffer with `zp_buffer()` (ideal for DMA or non-blocking socket/UART reads) and receive messages:
+ZeroPack uses a pull-based, lock-free cursor design (`head` / `tail`). Lease contiguous space directly from the buffer with `zp_buffer()` (ideal for DMA or non-blocking socket/UART reads), commit incoming bytes with `zp_commit()`, and receive messages:
 
 ```c
 // Ingest raw bytes from hardware or transport into the buffer:
-size_t avail;
+size_t avail = 0;
 uint8_t* dest = zp_buffer(&ctx, &avail);
 if (dest && avail > 0) {
     size_t received = uart_read_bytes(dest, avail);
     if (received > 0) {
-        ctx.buf.head += received;
+        zp_commit(&ctx, received);
     }
 }
 
@@ -195,12 +205,12 @@ ZeroPack includes a linear static memory pool with type-validated references:
 
 ```c
 // Store values, slices, and C-strings safely into the pool
-poolref_t ref_val = zp_pool_push(ctx, SensorReport, &sample, 1);
-poolref_t ref_str = zp_pool_push_str(ctx, "Sensor OK");
+poolref_t ref_val = zp_pool_push(&ctx, SensorReport, &sample, 1);
+poolref_t ref_str = zp_pool_push_str(&ctx, "Sensor OK");
 
 // Retrieve with strict compile-time casting and runtime type-tag verification
-SensorReport* report = zp_pool_get(ctx, SensorReport, ref_val, NULL);
-char* status_str = zp_pool_get_str(ctx, ref_str);
+SensorReport* report = zp_pool_get(&ctx, SensorReport, ref_val, NULL);
+char* status_str = zp_pool_get_str(&ctx, ref_str);
 ```
 
 ---
@@ -219,15 +229,30 @@ char* status_str = zp_pool_get_str(ctx, ref_str);
 ---
 
 ## Building and Testing
- 
-A self-contained test suite and a loopback example demonstrating action emission, `zp_recv` decoding, and binary handshake transmission are provided.
- 
-```bash
-# Run unit tests (100% pure C11 freestanding suite)
-make test
 
-# Build and run minimal loopback example
-make example
+ZeroPack uses CMake as its primary build system with CTest integration for unit tests and negative compilation tests.
+
+```bash
+# Configure (enables unit tests and minimal loopback example)
+cmake -B build -DZEROPACK_BUILD_TESTS=ON -DZEROPACK_BUILD_EXAMPLES=ON
+
+# Build
+cmake --build build
+
+# Run test suite (unit tests + negative compilation tests)
+ctest --test-dir build --output-on-failure
+
+# Run minimal loopback example
+./build/example_minimal
+```
+
+### CMake Integration
+
+To embed ZeroPack in your project:
+
+```cmake
+add_subdirectory(path/to/zeropack)
+target_link_libraries(my_app PRIVATE zeropack)
 ```
 
 Output:
