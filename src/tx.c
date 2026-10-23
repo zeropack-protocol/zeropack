@@ -9,6 +9,7 @@ zp_ssize_t zp_send_raw(
     size_t size
 ) {
     if (!ctx || !ctx->writev) return -1;
+    if (size > 0 && !payload) return -1;
 
     zp_header_t hdr = {
         .action = action,
@@ -21,7 +22,7 @@ zp_ssize_t zp_send_raw(
         {.buf = payload, .len = size},
     };
 
-    int iovcnt = (payload != NULL && size > 0) ? 2 : 1;
+    int iovcnt = (payload && size > 0) ? 2 : 1;
     return ctx->writev(ctx, iov, iovcnt);
 }
 
@@ -32,14 +33,26 @@ zp_ssize_t zp_send(
         return -1;
     }
 
+    const zp_action_meta_t* act = &ctx->schema->actions[action];
     uint8_t type_id = TYPE_ID_NONE;
     size_t size = 0;
-    const zp_type_meta_t* type = ctx->schema->actions[action].type;
-    if (type) {
-        type_id = zp_get_id(ctx->schema, type);
-        size = (size_t)count * type->size;
+
+    if (act->type) {
+        if (!payload) return -1;
+
+        type_id = zp_get_id(ctx->schema, act->type);
+        if (type_id == TYPE_ID_NONE) return -1;
+
+        if (!act->is_array) {
+            count = 1;
+        } else if (count == 0) {
+            return -1;
+        }
+
+        size = (size_t)count * act->type->size;
     } else {
         count = 0;
+        payload = NULL;
     }
 
     return zp_send_raw(ctx, action, type_id, count, payload, size);

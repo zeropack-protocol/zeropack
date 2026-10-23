@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#define ZP_IMPLEMENTATION
 #include "zeropack.h"
 
 // -----------------------------------------------------------------------------
@@ -19,7 +20,7 @@
     V(ACTION_PONG)              \
     T(ACTION_REPORT, SensorReport, "WIRE_REPORT")
 
-ZP_DECLARE(APP_TYPES, APP_ACTIONS)
+ZP_TYPES(APP_TYPES)
 
 // Generate the runtime schema metadata and dispatch table
 ZP_SCHEMA(example_schema, APP_TYPES, APP_ACTIONS)
@@ -54,7 +55,7 @@ static void flush_bus_to_receiver(zp_ctx_t* ctx, const char* label) {
         s_pending_rx_len,
         label
     );
-    ctx->buf.head += s_pending_rx_len;
+    zp_commit(ctx, s_pending_rx_len);
     s_pending_rx_len = 0;
 
     zp_msg_t msg;

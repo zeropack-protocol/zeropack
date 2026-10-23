@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define ZP_IMPLEMENTATION
 #include "zeropack.h"
 
 // =============================================================================
@@ -104,7 +105,7 @@ static int s_tests_failed = 0;
 #define SINGLE_TYPES(X) X(single_item_t, SINGLE_FIELDS)
 ZP_TYPES(SINGLE_TYPES)
 
-ZP_DECLARE(TEST_TYPES, TEST_ACTIONS)
+ZP_TYPES(TEST_TYPES)
 ZP_SCHEMA(test_schema, TEST_TYPES, TEST_ACTIONS)
 
 // =============================================================================
@@ -341,7 +342,7 @@ static bool test_rx_pipeline_and_dispatch(void) {
     };
     uint8_t* buf = zp_buffer(&s_ctx, NULL);
     memcpy(buf, &ping_hdr, sizeof(ping_hdr));
-    s_ctx.buf.head += sizeof(ping_hdr);
+    zp_commit(&s_ctx, sizeof(ping_hdr));
 
     zp_msg_t msg;
     ASSERT(zp_recv(&s_ctx, &msg));
@@ -365,7 +366,7 @@ static bool test_rx_pipeline_and_dispatch(void) {
     buf = zp_buffer(&s_ctx, NULL);
     memcpy(buf, &sensor_hdr, sizeof(sensor_hdr));
     memcpy(buf + sizeof(sensor_hdr), &tx_sensor, sizeof(tx_sensor));
-    s_ctx.buf.head += sizeof(sensor_hdr) + sizeof(tx_sensor);
+    zp_commit(&s_ctx, sizeof(sensor_hdr) + sizeof(tx_sensor));
 
     ASSERT(zp_recv(&s_ctx, &msg));
     ASSERT_EQ(msg.action, ACTION_UPDATE_DATA);
@@ -472,7 +473,7 @@ static bool test_internal_pool_sys_actions(void) {
     uint8_t* buf = zp_buffer(&s_ctx, NULL);
     memcpy(buf, &store_hdr, sizeof(store_hdr));
     memcpy(buf + sizeof(store_hdr), &raw_bool, sizeof(raw_bool));
-    s_ctx.buf.head += sizeof(store_hdr) + sizeof(raw_bool);
+    zp_commit(&s_ctx, sizeof(store_hdr) + sizeof(raw_bool));
 
     zp_msg_t msg;
     ASSERT(!zp_recv(&s_ctx, &msg));
@@ -500,7 +501,7 @@ static bool test_internal_pool_sys_actions(void) {
     };
     buf = zp_buffer(&s_ctx, NULL);
     memcpy(buf, &edit_pkt, sizeof(edit_pkt));
-    s_ctx.buf.head += sizeof(edit_pkt);
+    zp_commit(&s_ctx, sizeof(edit_pkt));
     ASSERT(!zp_recv(&s_ctx, &msg));
 
     b_val = zp_pool_get(&s_ctx, bool, 0, NULL);
@@ -515,7 +516,7 @@ static bool test_internal_pool_sys_actions(void) {
     };
     buf = zp_buffer(&s_ctx, NULL);
     memcpy(buf, &reset_hdr, sizeof(reset_hdr));
-    s_ctx.buf.head += sizeof(reset_hdr);
+    zp_commit(&s_ctx, sizeof(reset_hdr));
     ASSERT(!zp_recv(&s_ctx, &msg));
 
     // Pool must be cleanly reset

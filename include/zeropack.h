@@ -155,6 +155,7 @@ struct zp_ctx {
 };
 
 void* zp_buffer(zp_ctx_t* ctx, size_t* out_avail);
+void zp_commit(zp_ctx_t* ctx, size_t bytes_written);
 
 // Memory pool =================================================================
 typedef enum {
@@ -244,14 +245,13 @@ zp_ssize_t zp_send(
     TypesMacro(_ZP_DECLARE_TYPE) \
     TypesMacro(_ZP_MAKE_TYPE_META)
 
-#define ZP_ACTIONS(ActionsMacro) \
+#define _ZP_GEN_ACTION_ENUM(ActionsMacro) \
     enum { ActionsMacro(_ZP_GEN_ACTION_ID, _ZP_GEN_ACTION_ID, _ZP_GEN_ACTION_ID) };
 
-#define ZP_DECLARE(TypesMacro, ActionsMacro) \
-    ZP_TYPES(TypesMacro)                     \
-    ZP_ACTIONS(ActionsMacro)
-
+#ifdef ZP_IMPLEMENTATION
 #define ZP_SCHEMA(Name, TypesMacro, ActionsMacro)                           \
+    _ZP_GEN_ACTION_ENUM(ActionsMacro)                                       \
+                                                                            \
     static const zp_action_meta_t Name##_actions[] = {                      \
         ActionsMacro(_ZP_ACTION_V, _ZP_ACTION_T, _ZP_ACTION_A)              \
     };                                                                      \
@@ -278,6 +278,11 @@ zp_ssize_t zp_send(
         .actions = Name##_actions,                                          \
         .action_count = sizeof(Name##_actions) / sizeof(Name##_actions[0]), \
     };
+#else
+#define ZP_SCHEMA(Name, TypesMacro, ActionsMacro)                           \
+    _ZP_GEN_ACTION_ENUM(ActionsMacro)                                       \
+    extern const zp_schema_t Name;
+#endif
 // clang-format on
 
 #include "zeropack/internal.h"

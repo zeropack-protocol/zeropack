@@ -58,17 +58,22 @@ extern size_t strlen(const char* s);
      .offset = offsetof(_struct, _name),            \
      .length = _len},
 
+#ifdef ZP_IMPLEMENTATION
 #define _ZP_MAKE_TYPE_META(StructName, FieldsMacro)             \
-    static const zp_field_meta_t __zp_fields_##StructName[] = { \
+    const zp_field_meta_t __zp_fields_##StructName[] = {        \
         FieldsMacro(StructName, _ZP_FIELD_META, _ZP_ARRAY_META) \
     };                                                          \
-    static const zp_type_meta_t __zp_meta_##StructName = {      \
+    const zp_type_meta_t __zp_meta_##StructName = {             \
         .name = #StructName,                                    \
         .fields = __zp_fields_##StructName,                     \
         .size = sizeof(StructName),                             \
         .count = sizeof(__zp_fields_##StructName) /             \
                  sizeof(__zp_fields_##StructName[0]),           \
     };
+#else
+#define _ZP_MAKE_TYPE_META(StructName, FieldsMacro) \
+    extern const zp_type_meta_t __zp_meta_##StructName;
+#endif
 
 #define _ZP_REF_TYPE_META(StructName, FieldsMacro) zp_metaof(StructName),
 
